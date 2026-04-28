@@ -160,7 +160,7 @@ if consulta:
         actividad_detectada = st.selectbox("Seleccione actividad:", actividades_disponibles)
 
 # =========================
-# 📁 DOCUMENTACIÓN BASE
+# 📁 DOCUMENTACIÓN BASE + CONTROL
 # =========================
 if actividad_detectada:
 
@@ -193,6 +193,100 @@ if actividad_detectada:
 
             with open(ruta, "rb") as f:
                 st.download_button("📥 Descargar", f, file_name=a)
+
+    # 📋 CONTROL BASE
+    st.markdown("### 📋 Control documentación base")
+
+    requisitos_base = ["procedimiento", "permiso", "checklist", "emergencia"]
+    faltantes_base = []
+
+    for r in requisitos_base:
+        if not any(r in a[0].lower() for a in archivos):
+            faltantes_base.append(r)
+
+    if faltantes_base:
+        st.warning(f"⚠️ Faltan: {', '.join(faltantes_base)}")
+    else:
+        st.success("✔ Documentación base completa")
+
+    # 📊 CONTROL REGISTROS
+    st.markdown("### 📊 Estado real (REGISTROS)")
+
+    requisitos = ["permiso", "ats", "checklist"]
+    faltantes = []
+
+    carpeta_reg = os.path.join(base_registros, actividad_detectada)
+
+    hay_registros = False
+
+    if os.path.exists(carpeta_reg):
+        for root, dirs, files in os.walk(carpeta_reg):
+            if any(f.endswith(".pdf") for f in files):
+                hay_registros = True
+                break
+
+    if not hay_registros:
+        st.info("📭 No hay registros cargados.")
+
+    for r in requisitos:
+
+        encontrado = False
+
+        if os.path.exists(carpeta_reg):
+            for root, dirs, files in os.walk(carpeta_reg):
+                for file in files:
+                    if r in file.lower():
+                        encontrado = True
+                        break
+
+        if not encontrado:
+            faltantes.append(r)
+
+    if faltantes:
+        st.error(f"❌ Faltan: {', '.join(faltantes)}")
+    else:
+        st.success("✔ Registros completos")
+
+# =========================
+# 🚨 ALERTAS
+# =========================
+st.markdown("---")
+st.markdown("## 🚨 Alertas de Vencimientos")
+
+alertas = []
+
+for root, dirs, files in os.walk(base_registros):
+    for file in files:
+        if file.endswith(".pdf"):
+            ruta = os.path.join(root, file)
+            resultado = evaluar_vencimiento(ruta, file)
+
+            if resultado:
+                estado, _ = resultado
+                if "🔴" in estado or "🟡" in estado:
+                    alertas.append(f"{estado} - {file}")
+
+if alertas:
+    for a in alertas:
+        st.write(a)
+else:
+    st.success("✔ Sin vencimientos críticos")
+
+# =========================
+# 📊 PANEL
+# =========================
+st.markdown("---")
+st.markdown("## 📊 Panel de Control")
+
+total = len(actividades_disponibles)
+docs = 0
+
+for root, dirs, files in os.walk(base_registros):
+    docs += len([f for f in files if f.endswith(".pdf")])
+
+col1, col2 = st.columns(2)
+col1.metric("Actividades", total)
+col2.metric("Registros", docs)
 
 # =========================
 # SIDEBAR
