@@ -2,8 +2,6 @@ import streamlit as st
 import os
 from datetime import datetime, timedelta
 
-st.set_page_config(page_title="Sistema SST", layout="wide")
-
 # =========================
 # 🎨 ESTILOS
 # =========================
@@ -78,6 +76,12 @@ actividades_disponibles = [
     d for d in os.listdir(base_dir)
     if os.path.isdir(os.path.join(base_dir, d)) and d != "registros"
 ]
+
+# =========================
+# 🚨 CONTROL ACTIVIDADES VACÍO
+# =========================
+if not actividades_disponibles:
+    st.warning("⚠️ No hay actividades cargadas en DOCUMENTOS. Verifique el repositorio.")
 
 # =========================
 # 📤 CARGA INTELIGENTE (REGISTROS)
@@ -161,7 +165,9 @@ if actividad_detectada:
 
     st.markdown("### 📄 Documentación base")
 
-    if archivos:
+    if len(archivos) == 0:
+        st.info("📭 No hay documentación base cargada para esta actividad.")
+    else:
         for a, ruta, origen in archivos:
 
             nombre = a.replace("_", " ").replace(".pdf", "").title()
@@ -177,10 +183,9 @@ if actividad_detectada:
             with open(ruta, "rb") as f:
                 st.download_button("📥 Descargar", f, file_name=a)
 
-    else:
-        st.warning("Sin documentación base")
-
+    # =========================
     # 📋 CONTROL BASE
+    # =========================
     st.markdown("### 📋 Control documentación base")
 
     requisitos_base = ["procedimiento", "permiso", "checklist", "emergencia"]
@@ -195,13 +200,26 @@ if actividad_detectada:
     else:
         st.success("✔ Documentación base completa")
 
+    # =========================
     # 📊 CONTROL REGISTROS
+    # =========================
     st.markdown("### 📊 Estado real (REGISTROS)")
 
     requisitos = ["permiso", "ats", "checklist"]
     faltantes = []
 
     carpeta_reg = os.path.join(base_registros, actividad_detectada)
+
+    hay_registros = False
+
+    if os.path.exists(carpeta_reg):
+        for root, dirs, files in os.walk(carpeta_reg):
+            if any(f.endswith(".pdf") for f in files):
+                hay_registros = True
+                break
+
+    if not hay_registros:
+        st.info("📭 No hay registros cargados aún en esta actividad.")
 
     for r in requisitos:
 
@@ -245,7 +263,7 @@ if alertas:
     for a in alertas:
         st.write(a)
 else:
-    st.success("✔ Sin vencimientos críticos")
+    st.success("✔ Sin vencimientos críticos detectados")
 
 # =========================
 # 📊 PANEL
@@ -262,6 +280,12 @@ for root, dirs, files in os.walk(base_registros):
 c1, c2 = st.columns(2)
 c1.metric("Actividades", total)
 c2.metric("Registros", docs)
+
+if total == 0:
+    st.info("📭 No hay actividades registradas en el sistema.")
+
+if docs == 0:
+    st.info("📭 No hay registros PDF cargados aún.")
 
 # =========================
 # SIDEBAR
