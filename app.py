@@ -12,7 +12,7 @@ st.set_page_config(
 )
 
 # 🖼️ BANNER (LOCAL)
-st.image("activos/banner.png", use_container_width=True)
+st.image("banner.png", use_container_width=True)
 
 st.title("🦺 Sistema de Seguridad e Higiene")
 
