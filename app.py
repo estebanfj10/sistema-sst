@@ -3,6 +3,23 @@ import os
 from datetime import datetime, timedelta
 
 # =========================
+# 🧱 CONFIG GENERAL
+# =========================
+st.set_page_config(
+    page_title="Sistema SST",
+    page_icon="🦺",
+    layout="wide"
+)
+
+# 🖼️ BANNER PRINCIPAL
+st.image(
+    "https://images.unsplash.com/photo-1581092334651-ddf26d9a09d0",
+    use_container_width=True
+)
+
+st.title("🦺 Sistema de Seguridad e Higiene")
+
+# =========================
 # 🎨 ESTILOS
 # =========================
 st.markdown("""
@@ -64,6 +81,15 @@ def evaluar_vencimiento(ruta_archivo, nombre_archivo):
     return estado, fecha_vencimiento.strftime('%d/%m/%Y')
 
 # =========================
+# 🖼️ IMAGEN INTERMEDIA
+# =========================
+st.image(
+    "https://images.unsplash.com/photo-1581578731548-c64695cc6952",
+    caption="Seguridad en obra - Uso obligatorio de EPP",
+    use_container_width=True
+)
+
+# =========================
 # BASE DE DATOS
 # =========================
 base_dir = "documentos"
@@ -81,7 +107,7 @@ actividades_disponibles = [
 # 🚨 CONTROL ACTIVIDADES VACÍO
 # =========================
 if not actividades_disponibles:
-    st.warning("⚠️ No hay actividades cargadas en DOCUMENTOS. Verifique el repositorio.")
+    st.warning("⚠️ No hay actividades cargadas en DOCUMENTOS.")
 
 # =========================
 # 📤 CARGA INTELIGENTE (REGISTROS)
@@ -129,7 +155,7 @@ if archivo_subido:
         st.success(f"✔ Guardado en REGISTROS/{actividad_final}/{tipo_final}")
 
 # =========================
-# BUSCADOR
+# 🔎 BUSCADOR
 # =========================
 st.markdown("### 🔎 Búsqueda de documentación")
 
@@ -149,7 +175,7 @@ if consulta:
         actividad_detectada = st.selectbox("Seleccione actividad:", actividades_disponibles)
 
 # =========================
-# DOCUMENTACIÓN BASE + CONTROL
+# 📁 DOCUMENTACIÓN BASE
 # =========================
 if actividad_detectada:
 
@@ -166,7 +192,7 @@ if actividad_detectada:
     st.markdown("### 📄 Documentación base")
 
     if len(archivos) == 0:
-        st.info("📭 No hay documentación base cargada para esta actividad.")
+        st.info("📭 No hay documentación base cargada.")
     else:
         for a, ruta, origen in archivos:
 
@@ -183,9 +209,9 @@ if actividad_detectada:
             with open(ruta, "rb") as f:
                 st.download_button("📥 Descargar", f, file_name=a)
 
-# =========================
-# 📋 CONTROL BASE
-# =========================
+    # =========================
+    # 📋 CONTROL BASE
+    # =========================
     st.markdown("### 📋 Control documentación base")
 
     requisitos_base = ["procedimiento", "permiso", "checklist", "emergencia"]
@@ -196,13 +222,13 @@ if actividad_detectada:
             faltantes_base.append(r)
 
     if faltantes_base:
-        st.warning(f"⚠️ Faltan documentos base: {', '.join(faltantes_base)}")
+        st.warning(f"⚠️ Faltan: {', '.join(faltantes_base)}")
     else:
         st.success("✔ Documentación base completa")
 
-# =========================
-# 📊 CONTROL REGISTROS
-# =========================
+    # =========================
+    # 📊 CONTROL REGISTROS
+    # =========================
     st.markdown("### 📊 Estado real (REGISTROS)")
 
     requisitos = ["permiso", "ats", "checklist"]
@@ -219,7 +245,7 @@ if actividad_detectada:
                 break
 
     if not hay_registros:
-        st.info("📭 No hay registros cargados aún en esta actividad.")
+        st.info("📭 No hay registros cargados.")
 
     for r in requisitos:
 
@@ -236,7 +262,7 @@ if actividad_detectada:
             faltantes.append(r)
 
     if faltantes:
-        st.error(f"❌ Faltan registros: {', '.join(faltantes)}")
+        st.error(f"❌ Faltan: {', '.join(faltantes)}")
     else:
         st.success("✔ Registros completos")
 
@@ -263,7 +289,7 @@ if alertas:
     for a in alertas:
         st.write(a)
 else:
-    st.success("✔ Sin vencimientos críticos detectados")
+    st.success("✔ Sin vencimientos críticos")
 
 # =========================
 # 📊 PANEL
@@ -277,21 +303,14 @@ docs = 0
 for root, dirs, files in os.walk(base_registros):
     docs += len([f for f in files if f.endswith(".pdf")])
 
-c1, c2 = st.columns(2)
-c1.metric("Actividades", total)
-c2.metric("Registros", docs)
-
-if total == 0:
-    st.info("📭 No hay actividades registradas en el sistema.")
-
-if docs == 0:
-    st.info("📭 No hay registros PDF cargados aún.")
+col1, col2 = st.columns(2)
+col1.metric("Actividades", total)
+col2.metric("Registros", docs)
 
 # =========================
 # SIDEBAR
 # =========================
 st.sidebar.markdown("## 🦺 Sistema SST")
-st.sidebar.markdown("### 📁 Actividades")
 
 for act in actividades_disponibles:
     st.sidebar.write(f"📂 {act}")
