@@ -1,7 +1,11 @@
-st.title("VERSION NUEVA CARGADA ✔")
 import streamlit as st
 import os
 from datetime import datetime, timedelta
+
+# =========================
+# 🧪 TEST INICIAL
+# =========================
+st.title("VERSION NUEVA CARGADA ✔")
 
 # =========================
 # 🎨 ESTILOS
@@ -146,7 +150,7 @@ if consulta:
             actividad_detectada = act
             break
 
-    if not actividad_detectada:
+    if not actividad_detectada and actividades_disponibles:
         actividad_detectada = st.selectbox("Seleccione actividad:", actividades_disponibles)
 
 # =========================
@@ -184,9 +188,9 @@ if actividad_detectada:
             with open(ruta, "rb") as f:
                 st.download_button("📥 Descargar", f, file_name=a)
 
-    # =========================
-    # 📋 CONTROL BASE
-    # =========================
+# =========================
+# 📋 CONTROL BASE
+# =========================
     st.markdown("### 📋 Control documentación base")
 
     requisitos_base = ["procedimiento", "permiso", "checklist", "emergencia"]
@@ -201,9 +205,9 @@ if actividad_detectada:
     else:
         st.success("✔ Documentación base completa")
 
-    # =========================
-    # 📊 CONTROL REGISTROS
-    # =========================
+# =========================
+# 📊 CONTROL REGISTROS
+# =========================
     st.markdown("### 📊 Estado real (REGISTROS)")
 
     requisitos = ["permiso", "ats", "checklist"]
