@@ -81,15 +81,6 @@ def evaluar_vencimiento(ruta_archivo, nombre_archivo):
     return estado, fecha_vencimiento.strftime('%d/%m/%Y')
 
 # =========================
-# 🖼️ IMAGEN INTERMEDIA
-# =========================
-st.image(
-    "https://images.unsplash.com/photo-1581578731548-c64695cc6952",
-    caption="Seguridad en obra - Uso obligatorio de EPP",
-    use_container_width=True
-)
-
-# =========================
 # BASE DE DATOS
 # =========================
 base_dir = "documentos"
