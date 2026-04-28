@@ -3,11 +3,6 @@ import os
 from datetime import datetime, timedelta
 
 # =========================
-# 🧪 TEST INICIAL
-# =========================
-st.title("VERSION NUEVA CARGADA ✔")
-
-# =========================
 # 🎨 ESTILOS
 # =========================
 st.markdown("""
