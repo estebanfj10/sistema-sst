@@ -1,5 +1,7 @@
 import streamlit as st
 import os
+import requests
+import base64
 from datetime import datetime, timedelta
 
 # =========================
@@ -39,6 +41,36 @@ h1 {color: #1f4e79;}
 }
 </style>
 """, unsafe_allow_html=True)
+
+# =========================
+# 🔥 FUNCION GITHUB (NUEVA)
+# =========================
+def subir_a_github(ruta, nombre_archivo, contenido):
+
+    token = st.secrets.get("GITHUB_TOKEN")
+    repo = st.secrets.get("GITHUB_REPO")
+
+    if not token or not repo:
+        return False
+
+    try:
+        url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre_archivo}"
+
+        contenido_base64 = base64.b64encode(contenido).decode()
+
+        data = {
+            "message": f"Subida {nombre_archivo}",
+            "content": contenido_base64
+        }
+
+        headers = {"Authorization": f"token {token}"}
+
+        r = requests.put(url, json=data, headers=headers)
+
+        return r.status_code in [200, 201]
+
+    except:
+        return False
 
 # =========================
 # VENCIMIENTOS
@@ -115,13 +147,24 @@ if archivo:
 
         ruta_archivo = os.path.join(ruta, archivo.name)
 
+        # ✔ GUARDADO LOCAL (NO SE TOCA)
         with open(ruta_archivo, "wb") as f:
             f.write(archivo.getbuffer())
 
-        st.success(f"✔ Guardado en REGISTROS/{actividad}/{tipo}")
+        # 🔥 NUEVO: GUARDADO EN GITHUB (PERMANENTE)
+        ok = subir_a_github(
+            f"documentos/registros/{actividad}/{tipo}",
+            archivo.name,
+            archivo.getbuffer()
+        )
+
+        if ok:
+            st.success(f"✔ Guardado en REGISTROS/{actividad}/{tipo} (GitHub OK)")
+        else:
+            st.warning(f"⚠ Guardado local OK, pero falló GitHub")
 
 # =========================
-# 🔎 BUSCADOR (IMPORTANTE)
+# 🔎 BUSCADOR
 # =========================
 st.markdown("### 🔎 Búsqueda")
 
