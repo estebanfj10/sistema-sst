@@ -1,9 +1,11 @@
 import streamlit as st
 import os
+import requests
+import base64
 from datetime import datetime, timedelta
 
 # =========================
-# 🧱 CONFIG GENERAL
+# 🧱 CONFIG
 # =========================
 st.set_page_config(
     page_title="Sistema SST",
@@ -17,7 +19,7 @@ st.image("banner.png", use_container_width=True)
 st.title("🦺 Sistema de Seguridad e Higiene")
 
 # =========================
-# 🎨 ESTILOS PRO
+# 🎨 ESTILOS
 # =========================
 st.markdown("""
 <style>
@@ -46,7 +48,32 @@ h2, h3 {color: #1f4e79;}
 """, unsafe_allow_html=True)
 
 # =========================
-# 🚨 FUNCION VENCIMIENTOS
+# 🚀 SUBIR A GITHUB
+# =========================
+def subir_a_github(ruta, nombre_archivo, contenido):
+
+    token = st.secrets["GITHUB_TOKEN"]
+    repo = "TU_USUARIO/sistema-sst"  # 🔴 CAMBIAR
+
+    url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre_archivo}"
+
+    contenido_base64 = base64.b64encode(contenido).decode()
+
+    data = {
+        "message": f"Subida {nombre_archivo}",
+        "content": contenido_base64
+    }
+
+    headers = {
+        "Authorization": f"token {token}"
+    }
+
+    r = requests.put(url, json=data, headers=headers)
+
+    return r.status_code in [200, 201]
+
+# =========================
+# 🚨 VENCIMIENTOS
 # =========================
 def evaluar_vencimiento(ruta_archivo, nombre_archivo):
 
@@ -86,7 +113,7 @@ def evaluar_vencimiento(ruta_archivo, nombre_archivo):
     return estado, fecha_vencimiento.strftime('%d/%m/%Y')
 
 # =========================
-# BASE DE DATOS
+# BASE LOCAL (solo para lectura)
 # =========================
 base_dir = "documentos"
 base_registros = os.path.join(base_dir, "registros")
@@ -124,25 +151,23 @@ if archivo_subido:
             tipo_auto = t
             break
 
-    actividad_final = st.selectbox(
-        "Actividad",
-        actividades_disponibles,
-        index=actividades_disponibles.index(actividad_auto) if actividad_auto in actividades_disponibles else 0
-    )
-
+    actividad_final = st.selectbox("Actividad", actividades_disponibles)
     tipo_final = st.text_input("Tipo de documento", value=tipo_auto if tipo_auto else "")
 
     if st.button("Guardar archivo"):
 
-        ruta_guardado = os.path.join(base_registros, actividad_final, tipo_final)
-        os.makedirs(ruta_guardado, exist_ok=True)
+        ruta_github = f"documentos/registros/{actividad_final}/{tipo_final}"
 
-        ruta_completa = os.path.join(ruta_guardado, archivo_subido.name)
+        exito = subir_a_github(
+            ruta_github,
+            archivo_subido.name,
+            archivo_subido.getbuffer()
+        )
 
-        with open(ruta_completa, "wb") as f:
-            f.write(archivo_subido.getbuffer())
-
-        st.success(f"✔ Guardado en REGISTROS/{actividad_final}/{tipo_final}")
+        if exito:
+            st.success("✔ Archivo guardado en GitHub")
+        else:
+            st.error("❌ Error al subir archivo")
 
 # =========================
 # 🔎 BUSCADOR
@@ -165,7 +190,7 @@ if consulta:
         actividad_detectada = st.selectbox("Seleccione actividad:", actividades_disponibles)
 
 # =========================
-# 📁 CONTENIDO
+# 📁 DOCUMENTACIÓN BASE
 # =========================
 if actividad_detectada:
 
@@ -173,9 +198,7 @@ if actividad_detectada:
 
     col1, col2 = st.columns(2)
 
-    # =========================
-    # 📄 BASE
-    # =========================
+    # BASE
     with col1:
         st.markdown("### 📄 Documentación base")
 
@@ -205,9 +228,7 @@ if actividad_detectada:
                 with open(ruta, "rb") as f:
                     st.download_button("📥 Descargar", f, file_name=a)
 
-    # =========================
-    # 📊 REGISTROS
-    # =========================
+    # REGISTROS
     with col2:
         st.markdown("### 📊 Estado real (REGISTROS)")
 
@@ -235,7 +256,7 @@ if actividad_detectada:
             st.success("✔ Registros completos")
 
 # =========================
-# 🚨 ALERTAS PRO
+# 🚨 ALERTAS (local)
 # =========================
 st.markdown("---")
 st.markdown("## 🚨 Alertas de Vencimientos")
@@ -266,7 +287,7 @@ else:
     st.success("✔ Sin vencimientos críticos")
 
 # =========================
-# 📊 PANEL PRO
+# 📊 PANEL
 # =========================
 st.markdown("---")
 st.markdown("## 📊 Panel de Control")
@@ -296,7 +317,7 @@ with col2:
     """, unsafe_allow_html=True)
 
 # =========================
-# SIDEBAR PRO
+# SIDEBAR
 # =========================
 st.sidebar.markdown("## 🦺 Sistema SST")
 
