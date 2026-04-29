@@ -7,7 +7,6 @@ import base64
 # CONFIG
 # =========================
 st.set_page_config(page_title="Sistema SST", page_icon="🦺", layout="wide")
-
 st.title("🦺 Sistema SST")
 
 # =========================
@@ -19,7 +18,7 @@ repo = st.secrets.get("GITHUB_REPO")
 headers = {"Authorization": f"token {token}"} if token else {}
 
 # =========================
-# FUNCION LISTAR CARPETAS
+# FUNCIONES
 # =========================
 def listar_carpetas(ruta):
     if not repo:
@@ -29,7 +28,6 @@ def listar_carpetas(ruta):
 
     try:
         r = requests.get(url, headers=headers)
-
         if r.status_code == 200:
             data = r.json()
             return [item["name"] for item in data if item["type"] == "dir"]
@@ -38,13 +36,10 @@ def listar_carpetas(ruta):
 
     return []
 
-# =========================
-# SUBIR ARCHIVO
-# =========================
 def subir_archivo(ruta, nombre, contenido):
     if not token or not repo:
-        st.error("❌ Falta GITHUB_TOKEN o GITHUB_REPO")
-        return
+        st.error("❌ Falta configurar GITHUB_TOKEN o GITHUB_REPO")
+        return False
 
     url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre}"
 
@@ -57,30 +52,29 @@ def subir_archivo(ruta, nombre, contenido):
 
     r = requests.put(url, json=data, headers=headers)
 
-    if r.status_code in [200, 201]:
-        st.success("✔ Archivo subido correctamente")
-    else:
-        st.error(f"❌ Error GitHub: {r.status_code}")
+    return r.status_code in [200, 201]
 
 # =========================
-# 📂 CARGA DE REGISTROS
+# 📂 CARGA REGISTROS
 # =========================
 st.markdown("## 📂 Cargar Registro")
 
 archivo = st.file_uploader("Seleccionar PDF", type=["pdf"])
 
-# 🔥 ACTIVIDADES DESDE GITHUB
 actividades_reg = listar_carpetas("documentos/registros")
 
-if archivo and actividades_reg:
+# 🔥 fallback si GitHub falla
+if not actividades_reg:
+    actividades_reg = ["excavacion", "altura", "electricidad"]
+
+if archivo:
 
     actividad = st.selectbox("Actividad", actividades_reg)
 
-    # 🔥 SUBCARPETAS
     subcarpetas = listar_carpetas(f"documentos/registros/{actividad}")
 
     if not subcarpetas:
-        subcarpetas = ["(sin carpetas)"]
+        subcarpetas = ["ats", "permiso", "checklist"]
 
     tipo = st.selectbox("Carpeta destino", subcarpetas)
 
@@ -91,30 +85,58 @@ if archivo and actividades_reg:
 
     if st.button("Guardar en REGISTROS"):
 
-        ruta_final = f"documentos/registros/{actividad}/{tipo}"
+        ruta = f"documentos/registros/{actividad}/{tipo}"
 
-        subir_archivo(ruta_final, archivo.name, archivo.getbuffer())
+        ok = subir_archivo(ruta, archivo.name, archivo.getbuffer())
+
+        if ok:
+            st.success(f"✔ Guardado en {actividad}/{tipo}")
+        else:
+            st.error("❌ No se pudo subir a GitHub")
 
 # =========================
-# 📁 SIDEBAR
+# 🔎 CONSULTA (RECUPERADA)
 # =========================
-st.sidebar.markdown("## 🦺 Sistema SST")
-
-# ACTIVIDADES (documentos base)
-st.sidebar.markdown("### 📁 Actividades")
+st.markdown("## 🔎 Consulta de documentación")
 
 base_dir = "documentos"
 
+actividades_local = []
 if os.path.exists(base_dir):
     actividades_local = [
         d for d in os.listdir(base_dir)
         if os.path.isdir(os.path.join(base_dir, d)) and d != "registros"
     ]
 
-    for act in actividades_local:
-        st.sidebar.markdown(f"📁 {act}")
+actividad_sel = st.selectbox("Seleccionar actividad", actividades_local)
 
-# REGISTROS DESDE GITHUB
+if actividad_sel:
+
+    carpeta = os.path.join(base_dir, actividad_sel)
+
+    archivos = []
+
+    for root, _, files in os.walk(carpeta):
+        for f in files:
+            if f.endswith(".pdf"):
+                archivos.append(f)
+
+    if archivos:
+        st.markdown("### 📄 Documentación base")
+        for f in archivos:
+            st.write("📄", f)
+    else:
+        st.warning("No hay documentos")
+
+# =========================
+# SIDEBAR
+# =========================
+st.sidebar.markdown("## 🦺 Sistema SST")
+
+st.sidebar.markdown("### 📁 Actividades")
+for act in actividades_local:
+    st.sidebar.markdown(f"📁 {act}")
+
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 📂 Registros")
 
