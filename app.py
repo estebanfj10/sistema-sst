@@ -32,7 +32,7 @@ h1 {color: #1f4e79;}
 """, unsafe_allow_html=True)
 
 # =========================
-# 🔥 GITHUB FUNCIONES
+# 🔥 FUNCIONES GITHUB
 # =========================
 def obtener_actividades_github():
     token = st.secrets.get("GITHUB_TOKEN")
@@ -42,7 +42,10 @@ def obtener_actividades_github():
         return []
 
     url = f"https://api.github.com/repos/{repo}/contents/documentos"
-    headers = {"Authorization": f"token {token}"}
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github+json"
+    }
 
     try:
         r = requests.get(url, headers=headers)
@@ -58,7 +61,44 @@ def obtener_actividades_github():
 
     return []
 
-def subir_a_github(ruta, nombre, contenido):
+
+def obtener_tipos_github(actividad):
+    token = st.secrets.get("GITHUB_TOKEN")
+    repo = st.secrets.get("GITHUB_REPO")
+
+    if not token or not repo:
+        return []
+
+    url = f"https://api.github.com/repos/{repo}/contents/documentos/registros/{actividad}"
+
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github+json"
+    }
+
+    try:
+        r = requests.get(url, headers=headers)
+
+        if r.status_code == 200:
+            data = r.json()
+
+            carpetas = []
+            for item in data:
+                if item.get("type") == "dir":
+                    carpetas.append(item.get("name"))
+
+            return sorted(carpetas)
+
+        else:
+            st.warning(f"GitHub status: {r.status_code}")
+
+    except Exception as e:
+        st.error(f"Error GitHub: {e}")
+
+    return []
+
+
+def subir_a_github(ruta, nombre_archivo, contenido):
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
 
@@ -66,12 +106,12 @@ def subir_a_github(ruta, nombre, contenido):
         return False
 
     try:
-        url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre}"
+        url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre_archivo}"
 
         contenido_base64 = base64.b64encode(contenido).decode()
 
         data = {
-            "message": f"Subida {nombre}",
+            "message": f"Subida {nombre_archivo}",
             "content": contenido_base64
         }
 
@@ -113,15 +153,16 @@ def evaluar_vencimiento(ruta, nombre):
         return "🟢 VIGENTE"
 
 # =========================
-# BASE LOCAL
+# BASE LOCAL (no se rompe)
 # =========================
 base_dir = "documentos"
 base_registros = os.path.join(base_dir, "registros")
 
+os.makedirs(base_dir, exist_ok=True)
 os.makedirs(base_registros, exist_ok=True)
 
 # =========================
-# 🔥 ACTIVIDADES DESDE GITHUB
+# ACTIVIDADES DESDE GITHUB
 # =========================
 actividades = obtener_actividades_github()
 
@@ -129,7 +170,7 @@ if not actividades:
     st.warning("⚠️ No se pudieron leer actividades desde GitHub")
 
 # =========================
-# 📤 CARGA
+# 📤 CARGA REGISTROS
 # =========================
 st.markdown("## 📤 Cargar documento (REGISTRO)")
 
@@ -139,27 +180,31 @@ if archivo and actividades:
 
     actividad = st.selectbox("Actividad", actividades)
 
-    tipo = st.selectbox(
-        "Tipo de registro",
-        [
-            "ats",
-            "permiso",
-            "checklist",
-            "capacitacion",
-            "inspeccion",
-            "incidente",
-            "mantenimiento"
-        ]
-    )
+    # 🔥 TIPOS DESDE GITHUB + BASE
+    tipos_github = obtener_tipos_github(actividad)
+
+    tipos_base = [
+        "ats",
+        "permiso",
+        "checklist",
+        "capacitacion",
+        "inspeccion",
+        "incidente",
+        "mantenimiento"
+    ]
+
+    tipos = sorted(list(set(tipos_base + tipos_github)))
+
+    tipo = st.selectbox("Tipo de registro", tipos)
 
     if st.button("Guardar archivo"):
 
-        # LOCAL
         ruta = os.path.join(base_registros, actividad, tipo)
         os.makedirs(ruta, exist_ok=True)
 
         ruta_archivo = os.path.join(ruta, archivo.name)
 
+        # LOCAL
         with open(ruta_archivo, "wb") as f:
             f.write(archivo.getbuffer())
 
@@ -183,7 +228,7 @@ st.markdown("### 🔎 Búsqueda")
 actividad_sel = st.selectbox("Seleccionar actividad", actividades)
 
 # =========================
-# DOCUMENTACIÓN BASE
+# DOCUMENTACIÓN BASE (local)
 # =========================
 if actividad_sel:
 
@@ -195,13 +240,13 @@ if actividad_sel:
     for root, _, files in os.walk(carpeta):
         for f in files:
             if f.endswith(".pdf"):
-                archivos.append((f, os.path.join(root, f)))
+                archivos.append(f)
 
-    if not archivos:
-        st.warning("⚠️ No hay documentación base")
+    if archivos:
+        for f in archivos:
+            st.markdown(f"<div class='card'>📄 {f}</div>", unsafe_allow_html=True)
     else:
-        for nombre, ruta in archivos:
-            st.markdown(f"<div class='card'>📄 {nombre}</div>", unsafe_allow_html=True)
+        st.warning("⚠️ No hay documentación base")
 
 # =========================
 # SIDEBAR
