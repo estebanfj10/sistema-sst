@@ -7,15 +7,8 @@ from datetime import datetime, timedelta
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(
-    page_title="Sistema SST",
-    page_icon="🦺",
-    layout="wide"
-)
+st.set_page_config(page_title="Sistema SST", page_icon="🦺", layout="wide")
 
-# =========================
-# BANNER
-# =========================
 if os.path.exists("banner.png"):
     st.image("banner.png", use_container_width=True)
 
@@ -35,18 +28,37 @@ h1 {color: #1f4e79;}
     box-shadow: 0px 2px 6px rgba(0,0,0,0.1);
     margin-bottom: 10px;
 }
-.small-text {
-    color: gray;
-    font-size: 12px;
-}
 </style>
 """, unsafe_allow_html=True)
 
 # =========================
-# 🔥 FUNCION GITHUB (NUEVA)
+# 🔥 GITHUB FUNCIONES
 # =========================
-def subir_a_github(ruta, nombre_archivo, contenido):
+def obtener_actividades_github():
+    token = st.secrets.get("GITHUB_TOKEN")
+    repo = st.secrets.get("GITHUB_REPO")
 
+    if not token or not repo:
+        return []
+
+    url = f"https://api.github.com/repos/{repo}/contents/documentos"
+    headers = {"Authorization": f"token {token}"}
+
+    try:
+        r = requests.get(url, headers=headers)
+        if r.status_code == 200:
+            data = r.json()
+            return [
+                item["name"]
+                for item in data
+                if item["type"] == "dir" and item["name"] != "registros"
+            ]
+    except:
+        pass
+
+    return []
+
+def subir_a_github(ruta, nombre, contenido):
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
 
@@ -54,12 +66,12 @@ def subir_a_github(ruta, nombre_archivo, contenido):
         return False
 
     try:
-        url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre_archivo}"
+        url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre}"
 
         contenido_base64 = base64.b64encode(contenido).decode()
 
         data = {
-            "message": f"Subida {nombre_archivo}",
+            "message": f"Subida {nombre}",
             "content": contenido_base64
         }
 
@@ -76,7 +88,6 @@ def subir_a_github(ruta, nombre_archivo, contenido):
 # VENCIMIENTOS
 # =========================
 def evaluar_vencimiento(ruta, nombre):
-
     vigencias = {
         "capacitacion": 365,
         "programa": 365,
@@ -88,7 +99,6 @@ def evaluar_vencimiento(ruta, nombre):
     }
 
     tipo = next((t for t in vigencias if t in nombre.lower()), None)
-
     if not tipo:
         return None
 
@@ -103,27 +113,29 @@ def evaluar_vencimiento(ruta, nombre):
         return "🟢 VIGENTE"
 
 # =========================
-# BASE
+# BASE LOCAL
 # =========================
 base_dir = "documentos"
 base_registros = os.path.join(base_dir, "registros")
 
-os.makedirs(base_dir, exist_ok=True)
 os.makedirs(base_registros, exist_ok=True)
 
-actividades = [
-    d for d in os.listdir(base_dir)
-    if os.path.isdir(os.path.join(base_dir, d)) and d != "registros"
-]
+# =========================
+# 🔥 ACTIVIDADES DESDE GITHUB
+# =========================
+actividades = obtener_actividades_github()
+
+if not actividades:
+    st.warning("⚠️ No se pudieron leer actividades desde GitHub")
 
 # =========================
-# 📤 CARGA REGISTROS
+# 📤 CARGA
 # =========================
 st.markdown("## 📤 Cargar documento (REGISTRO)")
 
 archivo = st.file_uploader("Seleccionar PDF", type=["pdf"])
 
-if archivo:
+if archivo and actividades:
 
     actividad = st.selectbox("Actividad", actividades)
 
@@ -142,16 +154,16 @@ if archivo:
 
     if st.button("Guardar archivo"):
 
+        # LOCAL
         ruta = os.path.join(base_registros, actividad, tipo)
         os.makedirs(ruta, exist_ok=True)
 
         ruta_archivo = os.path.join(ruta, archivo.name)
 
-        # ✔ GUARDADO LOCAL (NO SE TOCA)
         with open(ruta_archivo, "wb") as f:
             f.write(archivo.getbuffer())
 
-        # 🔥 NUEVO: GUARDADO EN GITHUB (PERMANENTE)
+        # GITHUB
         ok = subir_a_github(
             f"documentos/registros/{actividad}/{tipo}",
             archivo.name,
@@ -159,128 +171,37 @@ if archivo:
         )
 
         if ok:
-            st.success(f"✔ Guardado en REGISTROS/{actividad}/{tipo} (GitHub OK)")
+            st.success("✔ Guardado en GitHub (permanente)")
         else:
-            st.warning(f"⚠ Guardado local OK, pero falló GitHub")
+            st.warning("⚠ Guardado local OK, pero falló GitHub")
 
 # =========================
 # 🔎 BUSCADOR
 # =========================
 st.markdown("### 🔎 Búsqueda")
 
-consulta = st.text_input("Buscar actividad")
-
-actividad_sel = None
-
-if consulta:
-    for act in actividades:
-        if act in consulta.lower():
-            actividad_sel = act
-            break
-
-    if not actividad_sel:
-        actividad_sel = st.selectbox("Seleccionar:", actividades)
+actividad_sel = st.selectbox("Seleccionar actividad", actividades)
 
 # =========================
-# DOCUMENTACIÓN + CONTROL
+# DOCUMENTACIÓN BASE
 # =========================
 if actividad_sel:
 
     st.markdown(f"## 📁 {actividad_sel.upper()}")
 
-    col1, col2 = st.columns(2)
+    carpeta = os.path.join(base_dir, actividad_sel)
+    archivos = []
 
-    # BASE
-    with col1:
-        st.markdown("### 📄 Documentación base")
+    for root, _, files in os.walk(carpeta):
+        for f in files:
+            if f.endswith(".pdf"):
+                archivos.append((f, os.path.join(root, f)))
 
-        carpeta = os.path.join(base_dir, actividad_sel)
-        archivos = []
-
-        for root, _, files in os.walk(carpeta):
-            for f in files:
-                if f.endswith(".pdf"):
-                    archivos.append((f, os.path.join(root, f)))
-
-        if not archivos:
-            st.warning("⚠️ No hay documentación base")
-        else:
-            for nombre, ruta in archivos:
-                st.markdown(f"<div class='card'>📄 {nombre}</div>", unsafe_allow_html=True)
-
-                with open(ruta, "rb") as f:
-                    st.download_button("Descargar", f, file_name=nombre)
-
-        requisitos = ["procedimiento", "permiso", "checklist", "emergencia"]
-
-        faltantes = [
-            r for r in requisitos
-            if not any(r in a[0].lower() for a in archivos)
-        ]
-
-        if faltantes:
-            st.error(f"❌ Faltan: {', '.join(faltantes)}")
-        else:
-            st.success("✔ Documentación completa")
-
-    # REGISTROS
-    with col2:
-        st.markdown("### 📊 Estado registros")
-
-        requisitos = ["permiso", "ats", "checklist"]
-        faltantes = []
-
-        carpeta_reg = os.path.join(base_registros, actividad_sel)
-
-        for r in requisitos:
-            ok = False
-
-            if os.path.exists(carpeta_reg):
-                for root, _, files in os.walk(carpeta_reg):
-                    if any(r in f.lower() for f in files):
-                        ok = True
-
-            if not ok:
-                faltantes.append(r)
-
-        if faltantes:
-            st.error(f"❌ Faltan: {', '.join(faltantes)}")
-        else:
-            st.success("✔ Registros completos")
-
-# =========================
-# ALERTAS
-# =========================
-st.markdown("---")
-st.markdown("## 🚨 Alertas")
-
-alertas = []
-
-for root, _, files in os.walk(base_registros):
-    for f in files:
-        if f.endswith(".pdf"):
-            estado = evaluar_vencimiento(os.path.join(root, f), f)
-            if estado and ("🔴" in estado or "🟡" in estado):
-                alertas.append(f"{estado} - {f}")
-
-if alertas:
-    for a in alertas:
-        st.write(a)
-else:
-    st.success("✔ Sin alertas")
-
-# =========================
-# PANEL
-# =========================
-st.markdown("---")
-st.markdown("## 📊 Panel")
-
-total = len(actividades)
-docs = sum(len(files) for _, _, files in os.walk(base_registros))
-
-c1, c2 = st.columns(2)
-c1.metric("Actividades", total)
-c2.metric("Registros", docs)
+    if not archivos:
+        st.warning("⚠️ No hay documentación base")
+    else:
+        for nombre, ruta in archivos:
+            st.markdown(f"<div class='card'>📄 {nombre}</div>", unsafe_allow_html=True)
 
 # =========================
 # SIDEBAR
