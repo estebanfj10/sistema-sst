@@ -38,12 +38,35 @@ h1, h2, h3 {color: #1f4e79;}
 """, unsafe_allow_html=True)
 
 # =========================
-# GITHUB (opcional)
+# GITHUB CONFIG
+# =========================
+token = st.secrets.get("GITHUB_TOKEN")
+repo = st.secrets.get("GITHUB_REPO")
+
+# =========================
+# FUNCION: LEER CARPETAS GITHUB
+# =========================
+def obtener_tipos_desde_github(actividad):
+    if not token or not repo:
+        return []
+
+    url = f"https://api.github.com/repos/{repo}/contents/documentos/registros/{actividad}"
+    headers = {"Authorization": f"token {token}"}
+
+    try:
+        r = requests.get(url, headers=headers)
+        if r.status_code == 200:
+            data = r.json()
+            return [item["name"] for item in data if item["type"] == "dir"]
+    except:
+        return []
+
+    return []
+
+# =========================
+# FUNCION SUBIR GITHUB
 # =========================
 def subir_a_github(ruta, nombre_archivo, contenido):
-    token = st.secrets.get("GITHUB_TOKEN")
-    repo = st.secrets.get("GITHUB_REPO")
-
     if not token or not repo:
         return False
 
@@ -66,26 +89,23 @@ def subir_a_github(ruta, nombre_archivo, contenido):
 # =========================
 # VENCIMIENTOS
 # =========================
-def evaluar_vencimiento(ruta_archivo, nombre_archivo):
-
-    nombre = nombre_archivo.lower()
+def evaluar_vencimiento(ruta, nombre):
+    nombre = nombre.lower()
 
     vigencias = {
         "capacitacion": 365,
-        "programa": 365,
         "aviso": 180,
         "seguro": 365,
         "vtv": 365,
-        "licencia": 365 * 5,
-        "apto": 365,
+        "licencia": 365*5,
+        "apto": 365
     }
 
     tipo = next((t for t in vigencias if t in nombre), None)
-
     if not tipo:
         return None
 
-    fecha = datetime.fromtimestamp(os.path.getmtime(ruta_archivo))
+    fecha = datetime.fromtimestamp(os.path.getmtime(ruta))
     venc = fecha + timedelta(days=vigencias[tipo])
     hoy = datetime.now()
 
@@ -93,8 +113,7 @@ def evaluar_vencimiento(ruta_archivo, nombre_archivo):
         return "🔴 VENCIDO"
     elif (venc - hoy).days <= 30:
         return "🟡 POR VENCER"
-    else:
-        return "🟢 VIGENTE"
+    return "🟢 VIGENTE"
 
 # =========================
 # BASE
@@ -102,7 +121,6 @@ def evaluar_vencimiento(ruta_archivo, nombre_archivo):
 base_dir = "documentos"
 base_registros = os.path.join(base_dir, "registros")
 
-os.makedirs(base_dir, exist_ok=True)
 os.makedirs(base_registros, exist_ok=True)
 
 actividades = [
@@ -110,11 +128,8 @@ actividades = [
     if os.path.isdir(os.path.join(base_dir, d)) and d != "registros"
 ]
 
-if not actividades:
-    st.warning("⚠️ No hay actividades cargadas")
-
 # =========================
-# CARGA DE REGISTROS
+# CARGA
 # =========================
 st.markdown("## 📤 Cargar documento (REGISTRO)")
 
@@ -124,31 +139,22 @@ if archivo:
 
     actividad = st.selectbox("Actividad", actividades)
 
-    # 🔥 TIPOS BASE
-    tipos_base = ["ats", "permiso", "checklist", "capacitacion", "inspeccion"]
+    tipos_base = ["ats", "permiso", "checklist"]
 
-    ruta_tipos = os.path.join(base_registros, actividad)
+    tipos_github = obtener_tipos_desde_github(actividad)
 
-    tipos_detectados = []
-
-    if os.path.exists(ruta_tipos):
-        tipos_detectados = [
-            d for d in os.listdir(ruta_tipos)
-            if os.path.isdir(os.path.join(ruta_tipos, d))
-        ]
-
-    # 🔥 UNIFICAR
-    tipos = sorted(list(set(tipos_base + tipos_detectados)))
+    tipos = sorted(list(set(tipos_base + tipos_github)))
 
     tipo = st.selectbox("Tipo de registro", tipos)
 
-    nuevo_tipo = st.text_input("➕ Crear nuevo tipo (opcional)")
+    nuevo_tipo = st.text_input("➕ Crear nuevo tipo")
 
     if nuevo_tipo:
         tipo = nuevo_tipo.lower()
 
     if st.button("Guardar archivo"):
 
+        # LOCAL
         ruta_local = os.path.join(base_registros, actividad, tipo)
         os.makedirs(ruta_local, exist_ok=True)
 
@@ -157,20 +163,21 @@ if archivo:
         with open(ruta_archivo, "wb") as f:
             f.write(archivo.getbuffer())
 
+        # GITHUB
         subir_a_github(
             f"documentos/registros/{actividad}/{tipo}",
             archivo.name,
             archivo.getbuffer()
         )
 
-        st.success(f"✔ Guardado en: {actividad}/{tipo}")
+        st.success(f"✔ Guardado en {actividad}/{tipo}")
 
 # =========================
-# BUSCADOR
+# BUSCAR
 # =========================
-st.markdown("### 🔎 Búsqueda")
+st.markdown("### 🔎 Buscar actividad")
 
-consulta = st.text_input("Buscar actividad")
+consulta = st.text_input("")
 
 actividad_sel = None
 
@@ -181,10 +188,10 @@ if consulta:
             break
 
     if not actividad_sel:
-        actividad_sel = st.selectbox("Elegir:", actividades)
+        actividad_sel = st.selectbox("Seleccionar:", actividades)
 
 # =========================
-# DOCUMENTACIÓN
+# DOCUMENTACION
 # =========================
 if actividad_sel:
 
@@ -202,21 +209,13 @@ if actividad_sel:
         for root, _, files in os.walk(carpeta):
             for f in files:
                 if f.endswith(".pdf"):
-                    archivos.append((f, os.path.join(root, f), root))
+                    archivos.append((f, os.path.join(root, f)))
 
         if not archivos:
             st.warning("⚠️ No hay documentación base")
         else:
-            for nombre, ruta, origen in archivos:
-                st.markdown(f"""
-                <div class="card">
-                    📄 <b>{nombre}</b><br>
-                    <span class="small-text">{os.path.basename(origen)}</span>
-                </div>
-                """, unsafe_allow_html=True)
-
-                with open(ruta, "rb") as f:
-                    st.download_button("📥 Descargar", f, file_name=nombre)
+            for nombre, ruta in archivos:
+                st.markdown(f"<div class='card'>📄 {nombre}</div>", unsafe_allow_html=True)
 
         requisitos = ["procedimiento", "permiso", "checklist", "emergencia"]
         faltantes = [r for r in requisitos if not any(r in a[0].lower() for a in archivos)]
@@ -224,25 +223,23 @@ if actividad_sel:
         if faltantes:
             st.error(f"❌ Faltan: {', '.join(faltantes)}")
         else:
-            st.success("✔ Documentación completa")
+            st.success("✔ Completo")
 
     # REGISTROS
     with col2:
-        st.markdown("### 📊 Estado registros")
+        st.markdown("### 📊 Registros")
 
-        requisitos = ["permiso", "ats", "checklist"]
+        requisitos = ["ats", "permiso", "checklist"]
         faltantes = []
 
         carpeta_reg = os.path.join(base_registros, actividad_sel)
 
         for r in requisitos:
             ok = False
-
             if os.path.exists(carpeta_reg):
                 for root, _, files in os.walk(carpeta_reg):
                     if any(r in f.lower() for f in files):
                         ok = True
-
             if not ok:
                 faltantes.append(r)
 
@@ -252,48 +249,9 @@ if actividad_sel:
             st.success("✔ Registros completos")
 
 # =========================
-# ALERTAS
-# =========================
-st.markdown("---")
-st.markdown("## 🚨 Alertas")
-
-alertas = []
-
-for root, _, files in os.walk(base_registros):
-    for f in files:
-        if f.endswith(".pdf"):
-            estado = evaluar_vencimiento(os.path.join(root, f), f)
-            if estado and ("🔴" in estado or "🟡" in estado):
-                alertas.append(f"{estado} - {f}")
-
-if alertas:
-    for a in alertas:
-        color = "#ff4d4d" if "🔴" in a else "#ffa500"
-        st.markdown(f"""
-        <div style="background:{color}; padding:10px; border-radius:10px; color:white;">
-            {a}
-        </div>
-        """, unsafe_allow_html=True)
-else:
-    st.success("✔ Sin alertas")
-
-# =========================
-# PANEL
-# =========================
-st.markdown("---")
-st.markdown("## 📊 Panel")
-
-total = len(actividades)
-docs = sum(len(files) for _, _, files in os.walk(base_registros))
-
-c1, c2 = st.columns(2)
-c1.metric("Actividades", total)
-c2.metric("Registros", docs)
-
-# =========================
 # SIDEBAR
 # =========================
-st.sidebar.markdown("## 🦺 Sistema SST")
+st.sidebar.markdown("## 🦺 Actividades")
 
 for act in actividades:
-    st.sidebar.markdown(f"📁 **{act}**")
+    st.sidebar.markdown(f"📁 {act}")
