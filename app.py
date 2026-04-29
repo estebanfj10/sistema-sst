@@ -2,17 +2,13 @@ import streamlit as st
 import os
 import requests
 import base64
-from datetime import datetime, timedelta
 
 # =========================
 # CONFIG
 # =========================
 st.set_page_config(page_title="Sistema SST", page_icon="🦺", layout="wide")
 
-if os.path.exists("banner.png"):
-    st.image("banner.png", use_container_width=True)
-
-st.title("🦺 Sistema de Seguridad e Higiene")
+st.title("🦺 Sistema SST")
 
 # =========================
 # GITHUB CONFIG
@@ -20,18 +16,20 @@ st.title("🦺 Sistema de Seguridad e Higiene")
 token = st.secrets.get("GITHUB_TOKEN")
 repo = st.secrets.get("GITHUB_REPO")
 
+headers = {"Authorization": f"token {token}"} if token else {}
+
 # =========================
-# FUNCIONES GITHUB
+# FUNCION LISTAR CARPETAS
 # =========================
-def obtener_carpetas_github(ruta):
-    if not token or not repo:
+def listar_carpetas(ruta):
+    if not repo:
         return []
 
     url = f"https://api.github.com/repos/{repo}/contents/{ruta}"
-    headers = {"Authorization": f"token {token}"}
 
     try:
         r = requests.get(url, headers=headers)
+
         if r.status_code == 200:
             data = r.json()
             return [item["name"] for item in data if item["type"] == "dir"]
@@ -40,171 +38,90 @@ def obtener_carpetas_github(ruta):
 
     return []
 
-def subir_a_github(ruta, nombre, contenido):
+# =========================
+# SUBIR ARCHIVO
+# =========================
+def subir_archivo(ruta, nombre, contenido):
     if not token or not repo:
-        return False
+        st.error("❌ Falta GITHUB_TOKEN o GITHUB_REPO")
+        return
 
-    try:
-        url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre}"
-        contenido_base64 = base64.b64encode(contenido).decode()
+    url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre}"
 
-        data = {
-            "message": f"Subida {nombre}",
-            "content": contenido_base64
-        }
+    contenido_base64 = base64.b64encode(contenido).decode()
 
-        headers = {"Authorization": f"token {token}"}
-        r = requests.put(url, json=data, headers=headers)
+    data = {
+        "message": f"Subida {nombre}",
+        "content": contenido_base64
+    }
 
-        return r.status_code in [200, 201]
-    except:
-        return False
+    r = requests.put(url, json=data, headers=headers)
 
-# =========================
-# BASE LOCAL
-# =========================
-base_dir = "documentos"
-base_registros = os.path.join(base_dir, "registros")
-
-os.makedirs(base_registros, exist_ok=True)
-
-actividades = [
-    d for d in os.listdir(base_dir)
-    if os.path.isdir(os.path.join(base_dir, d)) and d != "registros"
-]
+    if r.status_code in [200, 201]:
+        st.success("✔ Archivo subido correctamente")
+    else:
+        st.error(f"❌ Error GitHub: {r.status_code}")
 
 # =========================
-# 📂 CARGA REGISTROS (CORRECTA)
+# 📂 CARGA DE REGISTROS
 # =========================
-st.markdown("## 📂 Cargar REGISTRO")
+st.markdown("## 📂 Cargar Registro")
 
 archivo = st.file_uploader("Seleccionar PDF", type=["pdf"])
 
-if archivo:
+# 🔥 ACTIVIDADES DESDE GITHUB
+actividades_reg = listar_carpetas("documentos/registros")
 
-    # 🔥 ACTIVIDADES DE REGISTROS DESDE GITHUB
-    actividades_reg = obtener_carpetas_github("documentos/registros")
+if archivo and actividades_reg:
 
-    if not actividades_reg:
-        actividades_reg = actividades  # fallback
+    actividad = st.selectbox("Actividad", actividades_reg)
 
-    actividad = st.selectbox("Actividad (REGISTROS)", actividades_reg)
+    # 🔥 SUBCARPETAS
+    subcarpetas = listar_carpetas(f"documentos/registros/{actividad}")
 
-    # 🔥 SUBCARPETAS REALES
-    tipos = obtener_carpetas_github(f"documentos/registros/{actividad}")
+    if not subcarpetas:
+        subcarpetas = ["(sin carpetas)"]
 
-    if not tipos:
-        tipos = ["ats", "permiso", "checklist"]
+    tipo = st.selectbox("Carpeta destino", subcarpetas)
 
-    tipo = st.selectbox("Carpeta destino", tipos)
+    nueva = st.text_input("➕ Nueva carpeta (opcional)")
 
-    nuevo_tipo = st.text_input("➕ Crear nueva carpeta (opcional)")
-
-    if nuevo_tipo:
-        tipo = nuevo_tipo.lower()
+    if nueva:
+        tipo = nueva.lower()
 
     if st.button("Guardar en REGISTROS"):
 
-        # LOCAL
-        ruta_local = os.path.join(base_registros, actividad, tipo)
-        os.makedirs(ruta_local, exist_ok=True)
+        ruta_final = f"documentos/registros/{actividad}/{tipo}"
 
-        ruta_archivo = os.path.join(ruta_local, archivo.name)
-
-        with open(ruta_archivo, "wb") as f:
-            f.write(archivo.getbuffer())
-
-        # GITHUB
-        subir_a_github(
-            f"documentos/registros/{actividad}/{tipo}",
-            archivo.name,
-            archivo.getbuffer()
-        )
-
-        st.success(f"✔ Guardado en REGISTROS/{actividad}/{tipo}")
+        subir_archivo(ruta_final, archivo.name, archivo.getbuffer())
 
 # =========================
-# 🔎 BUSCADOR
+# 📁 SIDEBAR
 # =========================
-st.markdown("### 🔎 Buscar actividad")
+st.sidebar.markdown("## 🦺 Sistema SST")
 
-consulta = st.text_input("")
+# ACTIVIDADES (documentos base)
+st.sidebar.markdown("### 📁 Actividades")
 
-actividad_sel = None
+base_dir = "documentos"
 
-if consulta:
-    for act in actividades:
-        if act in consulta.lower():
-            actividad_sel = act
-            break
+if os.path.exists(base_dir):
+    actividades_local = [
+        d for d in os.listdir(base_dir)
+        if os.path.isdir(os.path.join(base_dir, d)) and d != "registros"
+    ]
 
-    if not actividad_sel:
-        actividad_sel = st.selectbox("Seleccionar:", actividades)
+    for act in actividades_local:
+        st.sidebar.markdown(f"📁 {act}")
 
-# =========================
-# DOCUMENTACIÓN BASE + CONTROL
-# =========================
-if actividad_sel:
+# REGISTROS DESDE GITHUB
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 📂 Registros")
 
-    st.markdown(f"## 📁 {actividad_sel.upper()}")
+registros = listar_carpetas("documentos/registros")
 
-    col1, col2 = st.columns(2)
-
-    # BASE
-    with col1:
-        st.markdown("### 📄 Documentación base")
-
-        carpeta = os.path.join(base_dir, actividad_sel)
-        archivos = []
-
-        for root, _, files in os.walk(carpeta):
-            for f in files:
-                if f.endswith(".pdf"):
-                    archivos.append(f)
-
-        if not archivos:
-            st.warning("⚠️ No hay documentación base")
-        else:
-            for f in archivos:
-                st.write("📄", f)
-
-        requisitos = ["procedimiento", "permiso", "checklist", "emergencia"]
-        faltantes = [r for r in requisitos if not any(r in a.lower() for a in archivos)]
-
-        if faltantes:
-            st.error(f"❌ Faltan: {', '.join(faltantes)}")
-        else:
-            st.success("✔ Documentación completa")
-
-    # REGISTROS
-    with col2:
-        st.markdown("### 📊 Estado registros")
-
-        requisitos = ["ats", "permiso", "checklist"]
-        faltantes = []
-
-        carpeta_reg = os.path.join(base_registros, actividad_sel)
-
-        for r in requisitos:
-            ok = False
-
-            if os.path.exists(carpeta_reg):
-                for root, _, files in os.walk(carpeta_reg):
-                    if any(r in f.lower() for f in files):
-                        ok = True
-
-            if not ok:
-                faltantes.append(r)
-
-        if faltantes:
-            st.error(f"❌ Faltan: {', '.join(faltantes)}")
-        else:
-            st.success("✔ Registros completos")
-
-# =========================
-# SIDEBAR
-# =========================
-st.sidebar.markdown("## 🦺 Actividades")
-
-for act in actividades:
-    st.sidebar.markdown(f"📁 {act}")
+if registros:
+    for r in registros:
+        st.sidebar.markdown(f"📂 {r}")
+else:
+    st.sidebar.markdown("⚠️ No se pudieron cargar")
