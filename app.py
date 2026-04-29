@@ -11,25 +11,33 @@ st.set_page_config(
     layout="wide"
 )
 
-# 🖼️ BANNER (LOCAL)
+# 🖼️ BANNER
 st.image("banner.png", use_container_width=True)
 
 st.title("🦺 Sistema de Seguridad e Higiene")
 
 # =========================
-# 🎨 ESTILOS
+# 🎨 ESTILOS PRO
 # =========================
 st.markdown("""
 <style>
-body {background-color: #f5f7fa;}
-h1, h2, h3 {color: #1f4e79;}
+body {background-color: #eef2f7;}
+
+h1 {color: #1f4e79; font-weight: 700;}
+h2, h3 {color: #1f4e79;}
+
 .card {
-    background-color: white;
-    padding: 15px;
-    border-radius: 10px;
-    box-shadow: 0px 2px 6px rgba(0,0,0,0.1);
-    margin-bottom: 10px;
+    background: white;
+    padding: 18px;
+    border-radius: 14px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    margin-bottom: 12px;
+    transition: 0.2s;
 }
+.card:hover {
+    transform: scale(1.01);
+}
+
 .small-text {
     color: gray;
     font-size: 12px;
@@ -92,13 +100,7 @@ actividades_disponibles = [
 ]
 
 # =========================
-# 🚨 CONTROL ACTIVIDADES VACÍO
-# =========================
-if not actividades_disponibles:
-    st.warning("⚠️ No hay actividades cargadas en DOCUMENTOS.")
-
-# =========================
-# 📤 CARGA INTELIGENTE
+# 📤 CARGA
 # =========================
 st.markdown("## 📤 Cargar documento (REGISTRO)")
 
@@ -147,7 +149,7 @@ if archivo_subido:
 # =========================
 st.markdown("### 🔎 Búsqueda de documentación")
 
-consulta = st.text_input("", placeholder="Ej: altura, excavación, taladro...")
+consulta = st.text_input("", placeholder="Ej: altura, excavación...")
 
 actividad_detectada = None
 
@@ -163,95 +165,77 @@ if consulta:
         actividad_detectada = st.selectbox("Seleccione actividad:", actividades_disponibles)
 
 # =========================
-# 📁 DOCUMENTACIÓN BASE + CONTROL
+# 📁 CONTENIDO
 # =========================
 if actividad_detectada:
 
     st.markdown(f"## 📁 {actividad_detectada.upper()}")
 
-    carpeta = os.path.join(base_dir, actividad_detectada)
-    archivos = []
+    col1, col2 = st.columns(2)
 
-    for root, dirs, files in os.walk(carpeta):
-        for file in files:
-            if file.endswith(".pdf"):
-                archivos.append((file, os.path.join(root, file), root))
+    # =========================
+    # 📄 BASE
+    # =========================
+    with col1:
+        st.markdown("### 📄 Documentación base")
 
-    st.markdown("### 📄 Documentación base")
+        carpeta = os.path.join(base_dir, actividad_detectada)
+        archivos = []
 
-    if len(archivos) == 0:
-        st.info("📭 No hay documentación base cargada.")
-    else:
-        for a, ruta, origen in archivos:
+        for root, dirs, files in os.walk(carpeta):
+            for file in files:
+                if file.endswith(".pdf"):
+                    archivos.append((file, os.path.join(root, file), root))
 
-            nombre = a.replace("_", " ").replace(".pdf", "").title()
-            origen_carpeta = os.path.basename(origen)
+        if len(archivos) == 0:
+            st.info("📭 No hay documentación base")
+        else:
+            for a, ruta, origen in archivos:
 
-            st.markdown(f"""
-            <div class="card">
-                📄 <b>{nombre}</b><br>
-                <span class="small-text">Origen: {origen_carpeta}</span>
-            </div>
-            """, unsafe_allow_html=True)
+                nombre = a.replace("_", " ").replace(".pdf", "").title()
+                origen_carpeta = os.path.basename(origen)
 
-            with open(ruta, "rb") as f:
-                st.download_button("📥 Descargar", f, file_name=a)
+                st.markdown(f"""
+                <div class="card">
+                    📄 <b>{nombre}</b><br>
+                    <span class="small-text">Origen: {origen_carpeta}</span>
+                </div>
+                """, unsafe_allow_html=True)
 
-    # 📋 CONTROL BASE
-    st.markdown("### 📋 Control documentación base")
+                with open(ruta, "rb") as f:
+                    st.download_button("📥 Descargar", f, file_name=a)
 
-    requisitos_base = ["procedimiento", "permiso", "checklist", "emergencia"]
-    faltantes_base = []
+    # =========================
+    # 📊 REGISTROS
+    # =========================
+    with col2:
+        st.markdown("### 📊 Estado real (REGISTROS)")
 
-    for r in requisitos_base:
-        if not any(r in a[0].lower() for a in archivos):
-            faltantes_base.append(r)
+        requisitos = ["permiso", "ats", "checklist"]
+        faltantes = []
 
-    if faltantes_base:
-        st.warning(f"⚠️ Faltan: {', '.join(faltantes_base)}")
-    else:
-        st.success("✔ Documentación base completa")
+        carpeta_reg = os.path.join(base_registros, actividad_detectada)
 
-    # 📊 CONTROL REGISTROS
-    st.markdown("### 📊 Estado real (REGISTROS)")
+        for r in requisitos:
+            encontrado = False
 
-    requisitos = ["permiso", "ats", "checklist"]
-    faltantes = []
+            if os.path.exists(carpeta_reg):
+                for root, dirs, files in os.walk(carpeta_reg):
+                    for file in files:
+                        if r in file.lower():
+                            encontrado = True
+                            break
 
-    carpeta_reg = os.path.join(base_registros, actividad_detectada)
+            if not encontrado:
+                faltantes.append(r)
 
-    hay_registros = False
-
-    if os.path.exists(carpeta_reg):
-        for root, dirs, files in os.walk(carpeta_reg):
-            if any(f.endswith(".pdf") for f in files):
-                hay_registros = True
-                break
-
-    if not hay_registros:
-        st.info("📭 No hay registros cargados.")
-
-    for r in requisitos:
-
-        encontrado = False
-
-        if os.path.exists(carpeta_reg):
-            for root, dirs, files in os.walk(carpeta_reg):
-                for file in files:
-                    if r in file.lower():
-                        encontrado = True
-                        break
-
-        if not encontrado:
-            faltantes.append(r)
-
-    if faltantes:
-        st.error(f"❌ Faltan: {', '.join(faltantes)}")
-    else:
-        st.success("✔ Registros completos")
+        if faltantes:
+            st.error(f"❌ Faltan: {', '.join(faltantes)}")
+        else:
+            st.success("✔ Registros completos")
 
 # =========================
-# 🚨 ALERTAS
+# 🚨 ALERTAS PRO
 # =========================
 st.markdown("---")
 st.markdown("## 🚨 Alertas de Vencimientos")
@@ -271,12 +255,18 @@ for root, dirs, files in os.walk(base_registros):
 
 if alertas:
     for a in alertas:
-        st.write(a)
+        color = "#ff4d4d" if "🔴" in a else "#ffa500"
+
+        st.markdown(f"""
+        <div style="background:{color}; padding:10px; border-radius:10px; color:white; margin-bottom:5px;">
+            {a}
+        </div>
+        """, unsafe_allow_html=True)
 else:
     st.success("✔ Sin vencimientos críticos")
 
 # =========================
-# 📊 PANEL
+# 📊 PANEL PRO
 # =========================
 st.markdown("---")
 st.markdown("## 📊 Panel de Control")
@@ -288,13 +278,27 @@ for root, dirs, files in os.walk(base_registros):
     docs += len([f for f in files if f.endswith(".pdf")])
 
 col1, col2 = st.columns(2)
-col1.metric("Actividades", total)
-col2.metric("Registros", docs)
+
+with col1:
+    st.markdown(f"""
+    <div class="card">
+        👷 <b>Actividades</b>
+        <h2>{total}</h2>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col2:
+    st.markdown(f"""
+    <div class="card">
+        📄 <b>Registros</b>
+        <h2>{docs}</h2>
+    </div>
+    """, unsafe_allow_html=True)
 
 # =========================
-# SIDEBAR
+# SIDEBAR PRO
 # =========================
 st.sidebar.markdown("## 🦺 Sistema SST")
 
 for act in actividades_disponibles:
-    st.sidebar.write(f"📂 {act}")
+    st.sidebar.markdown(f"📁 **{act}**")
