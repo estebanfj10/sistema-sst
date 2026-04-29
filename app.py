@@ -182,6 +182,8 @@ if archivo and actividades:
 
     # 🔥 TIPOS DESDE GITHUB + BASE
     tipos_github = obtener_tipos_github(actividad)
+    st.write("Actividad seleccionada:", actividad)
+st.write("Tipos desde GitHub:", tipos_github)
 
     tipos_base = [
         "ats",
