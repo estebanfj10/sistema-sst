@@ -125,7 +125,7 @@ os.makedirs(base_dir, exist_ok=True)
 os.makedirs(base_registros, exist_ok=True)
 
 # =========================
-# TIPOS (TUS CARPETAS)
+# TIPOS
 # =========================
 tipos = [
     "ats",
@@ -179,7 +179,7 @@ if archivo:
             st.warning("⚠ Guardado local OK, pero falló GitHub")
 
 # =========================
-# 🔎 CONSULTA
+# 🔎 CONSULTA COMPLETA
 # =========================
 st.markdown("---")
 st.markdown("## 🔎 Consulta de documentación")
@@ -190,45 +190,82 @@ if tipo_sel:
 
     st.markdown(f"## 📁 {tipo_sel.upper()}")
 
-    carpeta_tipo = os.path.join(base_registros, tipo_sel)
-    archivos_encontrados = []
+    # -------------------------
+    # BASE
+    # -------------------------
+    st.markdown("### 📄 Documentación base")
 
-    if os.path.exists(carpeta_tipo):
-        for root, dirs, files in os.walk(carpeta_tipo):
+    carpeta_base = os.path.join(base_dir, tipo_sel)
+    archivos_base = []
+
+    if os.path.exists(carpeta_base):
+        for root, dirs, files in os.walk(carpeta_base):
             for f in files:
                 if f.endswith(".pdf"):
-                    archivos_encontrados.append((f, root))
+                    archivos_base.append((f, root))
 
-    # REGISTROS
-    st.markdown("### 📄 Registros cargados")
-
-    if not archivos_encontrados:
-        st.warning("⚠️ No hay registros cargados")
+    if not archivos_base:
+        st.warning("⚠️ No hay documentación base")
     else:
-        for nombre, ruta in archivos_encontrados:
+        for nombre, ruta in archivos_base:
 
-            carpeta_origen = os.path.basename(ruta)
-
-            st.markdown(f"""
-            <div class="card">
-                📄 <b>{nombre}</b><br>
-                <span class="small-text">Subtipo: {carpeta_origen}</span>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"<div class='card'>📄 <b>{nombre}</b></div>", unsafe_allow_html=True)
 
             with open(os.path.join(ruta, nombre), "rb") as f:
                 st.download_button("📥 Descargar", f, file_name=nombre)
 
-    # CONTROL
+    # CONTROL BASE
+    st.markdown("### 📋 Control documentación base")
+
+    requisitos_base = ["procedimiento", "permiso", "checklist"]
+
+    faltantes_base = [
+        r for r in requisitos_base
+        if not any(r in a[0].lower() for a in archivos_base)
+    ]
+
+    if faltantes_base:
+        st.error(f"❌ Faltan: {', '.join(faltantes_base)}")
+    else:
+        st.success("✔ Documentación base completa")
+
+    # -------------------------
+    # REGISTROS
+    # -------------------------
+    st.markdown("### 📄 Registros cargados")
+
+    carpeta_reg = os.path.join(base_registros, tipo_sel)
+    archivos_reg = []
+
+    if os.path.exists(carpeta_reg):
+        for root, dirs, files in os.walk(carpeta_reg):
+            for f in files:
+                if f.endswith(".pdf"):
+                    archivos_reg.append((f, root))
+
+    if not archivos_reg:
+        st.warning("⚠️ No hay registros cargados")
+    else:
+        for nombre, ruta in archivos_reg:
+
+            subtipo = os.path.basename(ruta)
+
+            st.markdown(f"""
+            <div class="card">
+                📄 <b>{nombre}</b><br>
+                <span class="small-text">Subtipo: {subtipo}</span>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # CONTROL REGISTROS
     st.markdown("### 📋 Control de registros")
 
     requisitos = ["ats", "permiso", "checklist"]
 
-    faltantes = []
-
-    for r in requisitos:
-        if not any(r in a[0].lower() for a in archivos_encontrados):
-            faltantes.append(r)
+    faltantes = [
+        r for r in requisitos
+        if not any(r in a[0].lower() for a in archivos_reg)
+    ]
 
     if faltantes:
         st.error(f"❌ Faltan: {', '.join(faltantes)}")
