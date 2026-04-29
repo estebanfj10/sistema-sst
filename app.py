@@ -32,7 +32,7 @@ h1 {color: #1f4e79;}
 """, unsafe_allow_html=True)
 
 # =========================
-# 🔥 GITHUB
+# 🔥 FUNCIONES GITHUB
 # =========================
 def subir_a_github(ruta, nombre_archivo, contenido):
 
@@ -60,6 +60,39 @@ def subir_a_github(ruta, nombre_archivo, contenido):
 
     except:
         return False
+
+
+def obtener_subtipos_github(tipo):
+
+    token = st.secrets.get("GITHUB_TOKEN")
+    repo = st.secrets.get("GITHUB_REPO")
+
+    if not token or not repo:
+        return []
+
+    url = f"https://api.github.com/repos/{repo}/contents/documentos/registros/{tipo}"
+
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github+json"
+    }
+
+    try:
+        r = requests.get(url, headers=headers)
+
+        if r.status_code == 200:
+            data = r.json()
+
+            return [
+                item["name"]
+                for item in data
+                if item["type"] == "dir"
+            ]
+
+    except:
+        pass
+
+    return []
 
 # =========================
 # VENCIMIENTOS
@@ -100,9 +133,18 @@ base_registros = os.path.join(base_dir, "registros")
 os.makedirs(base_dir, exist_ok=True)
 os.makedirs(base_registros, exist_ok=True)
 
-actividades = [
-    d for d in os.listdir(base_dir)
-    if os.path.isdir(os.path.join(base_dir, d)) and d != "registros"
+# =========================
+# 🔥 TIPOS (TUS CARPETAS)
+# =========================
+tipos = [
+    "ats",
+    "caliente",
+    "electricidad",
+    "espacio confinado",
+    "excavacion",
+    "general",
+    "herramientas",
+    "izaje"
 ]
 
 # =========================
@@ -114,126 +156,57 @@ archivo = st.file_uploader("Seleccionar PDF", type=["pdf"])
 
 if archivo:
 
-    actividad = st.selectbox("Actividad", actividades)
+    tipo = st.selectbox("Tipo", tipos)
 
-    tipo = st.selectbox(
-        "Tipo de registro",
-        [
-            "ats",
-            "permiso",
-            "checklist",
-            "capacitacion",
-            "inspeccion",
-            "incidente",
-            "mantenimiento"
-        ]
-    )
+    # 🔥 SUBTIPOS DINÁMICOS
+    subtipos = obtener_subtipos_github(tipo)
+
+    if not subtipos:
+        st.warning("⚠️ No se encontraron subcarpetas en GitHub")
+        subtipos = ["otros"]
+
+    subtipo = st.selectbox("Subtipo", subtipos)
 
     if st.button("Guardar archivo"):
 
-        ruta = os.path.join(base_registros, actividad, tipo)
+        ruta = os.path.join(base_registros, tipo, subtipo)
         os.makedirs(ruta, exist_ok=True)
 
         ruta_archivo = os.path.join(ruta, archivo.name)
 
+        # LOCAL
         with open(ruta_archivo, "wb") as f:
             f.write(archivo.getbuffer())
 
+        # GITHUB
         ok = subir_a_github(
-            f"documentos/registros/{actividad}/{tipo}",
+            f"documentos/registros/{tipo}/{subtipo}",
             archivo.name,
             archivo.getbuffer()
         )
 
         if ok:
-            st.success(f"✔ Guardado en REGISTROS/{actividad}/{tipo} (GitHub OK)")
+            st.success(f"✔ Guardado en {tipo}/{subtipo} (GitHub OK)")
         else:
             st.warning("⚠ Guardado local OK, pero falló GitHub")
 
 # =========================
-# 🔎 BUSCADOR
+# 📂 VISUAL REGISTROS
 # =========================
-st.markdown("### 🔎 Búsqueda")
+st.markdown("## 📂 Registros cargados")
 
-consulta = st.text_input("Buscar actividad")
+for tipo in tipos:
 
-actividad_sel = None
+    carpeta_tipo = os.path.join(base_registros, tipo)
 
-if consulta:
-    for act in actividades:
-        if act in consulta.lower():
-            actividad_sel = act
-            break
+    if os.path.exists(carpeta_tipo):
 
-    if not actividad_sel:
-        actividad_sel = st.selectbox("Seleccionar:", actividades)
+        st.markdown(f"### 📁 {tipo}")
 
-# =========================
-# DOCUMENTACIÓN BASE + CONTROL
-# =========================
-if actividad_sel:
-
-    st.markdown(f"## 📁 {actividad_sel.upper()}")
-
-    carpeta = os.path.join(base_dir, actividad_sel)
-    archivos = []
-
-    for root, _, files in os.walk(carpeta):
-        for f in files:
-            if f.endswith(".pdf"):
-                archivos.append((f, os.path.join(root, f)))
-
-    if not archivos:
-        st.warning("⚠️ No hay documentación base")
-    else:
-        for nombre, ruta in archivos:
-            st.markdown(f"<div class='card'>📄 {nombre}</div>", unsafe_allow_html=True)
-
-            with open(ruta, "rb") as f:
-                st.download_button("📥 Descargar", f, file_name=nombre)
-
-    requisitos = ["procedimiento", "permiso", "checklist", "emergencia"]
-
-    faltantes = [
-        r for r in requisitos
-        if not any(r in a[0].lower() for a in archivos)
-    ]
-
-    if faltantes:
-        st.error(f"❌ Faltan: {', '.join(faltantes)}")
-    else:
-        st.success("✔ Documentación completa")
-
-# =========================
-# 📂 REGISTROS (VISUAL)
-# =========================
-    st.markdown("### 📂 Registros cargados")
-
-    carpeta_reg = os.path.join(base_registros, actividad_sel)
-
-    if os.path.exists(carpeta_reg):
-
-        tipos = [
-            d for d in os.listdir(carpeta_reg)
-            if os.path.isdir(os.path.join(carpeta_reg, d))
-        ]
-
-        if tipos:
-            for t in tipos:
-                ruta_tipo = os.path.join(carpeta_reg, t)
-
-                archivos = [
-                    f for f in os.listdir(ruta_tipo)
-                    if f.endswith(".pdf")
-                ]
-
-                st.write(f"📁 {t} ({len(archivos)})")
-
-        else:
-            st.info("No hay registros en esta actividad")
-
-    else:
-        st.info("No hay registros para esta actividad")
+        for root, dirs, files in os.walk(carpeta_tipo):
+            for f in files:
+                if f.endswith(".pdf"):
+                    st.write("📄", f)
 
 # =========================
 # ALERTAS
@@ -262,11 +235,11 @@ else:
 st.markdown("---")
 st.markdown("## 📊 Panel")
 
-total = len(actividades)
+total = len(tipos)
 docs = sum(len(files) for _, _, files in os.walk(base_registros))
 
 c1, c2 = st.columns(2)
-c1.metric("Actividades", total)
+c1.metric("Tipos", total)
 c2.metric("Registros", docs)
 
 # =========================
@@ -274,5 +247,5 @@ c2.metric("Registros", docs)
 # =========================
 st.sidebar.markdown("## 🦺 Sistema SST")
 
-for act in actividades:
-    st.sidebar.markdown(f"📁 {act}")
+for t in tipos:
+    st.sidebar.markdown(f"📁 {t}")
