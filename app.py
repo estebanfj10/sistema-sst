@@ -9,25 +9,7 @@ from datetime import datetime, timedelta
 # =========================
 st.set_page_config(page_title="Sistema SST", page_icon="🦺", layout="wide")
 
-if os.path.exists("banner.png"):
-    st.image("banner.png", use_container_width=True)
-
 st.title("🦺 Sistema de Seguridad e Higiene")
-
-# =========================
-# ESTILOS
-# =========================
-st.markdown("""
-<style>
-body {background-color: #eef2f7;}
-.card {
-    background: white;
-    padding: 15px;
-    border-radius: 10px;
-    margin-bottom: 10px;
-}
-</style>
-""", unsafe_allow_html=True)
 
 # =========================
 # GITHUB
@@ -52,65 +34,6 @@ def subir_a_github(ruta, nombre, contenido):
 
     return r.status_code in [200, 201]
 
-
-# 🔥 SUBTIPOS DESDE GITHUB (LO QUE TE FUNCIONABA)
-def obtener_subtipos_github(actividad):
-    token = st.secrets.get("GITHUB_TOKEN")
-    repo = st.secrets.get("GITHUB_REPO")
-
-    if not token or not repo:
-        return []
-
-    url = f"https://api.github.com/repos/{repo}/contents/documentos/registros/{actividad}"
-
-    headers = {
-        "Authorization": f"token {token}",
-        "Accept": "application/vnd.github+json"
-    }
-
-    try:
-        r = requests.get(url, headers=headers)
-
-        if r.status_code == 200:
-            data = r.json()
-
-            return [
-                item["name"]
-                for item in data
-                if item["type"] == "dir"
-            ]
-    except:
-        pass
-
-    return []
-
-
-# =========================
-# VENCIMIENTOS
-# =========================
-def evaluar_vencimiento(ruta, nombre):
-    vigencias = {
-        "capacitacion": 365,
-        "seguro": 365,
-        "vtv": 365,
-        "licencia": 365*5,
-    }
-
-    tipo = next((t for t in vigencias if t in nombre.lower()), None)
-    if not tipo:
-        return None
-
-    fecha = datetime.fromtimestamp(os.path.getmtime(ruta))
-    venc = fecha + timedelta(days=vigencias[tipo])
-
-    if datetime.now() > venc:
-        return "🔴 VENCIDO"
-    elif (venc - datetime.now()).days <= 30:
-        return "🟡 POR VENCER"
-    else:
-        return "🟢 VIGENTE"
-
-
 # =========================
 # BASE
 # =========================
@@ -126,7 +49,7 @@ actividades = [
 ]
 
 # =========================
-# 📤 CARGA (MEJORADA)
+# 📤 CARGA (ESTABLE)
 # =========================
 st.markdown("## 📤 Cargar registro")
 
@@ -136,27 +59,19 @@ if archivo:
 
     actividad = st.selectbox("Actividad", actividades)
 
-    # 🔹 TIPOS (LOCAL - estable)
+    # 🔹 SUBCARPETAS REALES (LOCAL)
     carpeta_act = os.path.join(base_registros, actividad)
     os.makedirs(carpeta_act, exist_ok=True)
 
-    tipos = [
+    subcarpetas = [
         d for d in os.listdir(carpeta_act)
         if os.path.isdir(os.path.join(carpeta_act, d))
     ]
 
-    if not tipos:
-        tipos = ["general"]
+    if not subcarpetas:
+        subcarpetas = ["general"]
 
-    tipo = st.selectbox("Tipo", tipos)
-
-    # 🔥 SUBTIPOS DESDE GITHUB (clave)
-    subtipos = obtener_subtipos_github(actividad)
-
-    if not subtipos:
-        subtipos = tipos  # fallback inteligente
-
-    subtipo = st.selectbox("Subtipo", subtipos)
+    subtipo = st.selectbox("Subtipo", subcarpetas)
 
     if st.button("Guardar"):
 
@@ -177,12 +92,12 @@ if archivo:
         )
 
         if ok:
-            st.success(f"✔ Guardado en {actividad}/{subtipo}")
+            st.success("✔ Guardado en GitHub")
         else:
-            st.warning("⚠ Guardado local OK")
+            st.warning("⚠ Guardado solo local")
 
 # =========================
-# 🔎 CONSULTA (NO TOCADA)
+# 🔎 CONSULTA
 # =========================
 st.markdown("## 🔎 Consulta")
 
@@ -192,57 +107,45 @@ if actividad_sel:
 
     st.markdown(f"## 📁 {actividad_sel.upper()}")
 
+    # =========================
     # BASE
+    # =========================
     carpeta = os.path.join(base_dir, actividad_sel)
-    archivos = []
+    archivos_base = []
 
     for root, _, files in os.walk(carpeta):
         for f in files:
             if f.endswith(".pdf"):
-                archivos.append((f, os.path.join(root, f)))
+                archivos_base.append((f, os.path.join(root, f)))
 
     st.markdown("### 📄 Documentación base")
 
-    if not archivos:
+    if not archivos_base:
         st.warning("⚠️ No hay documentación base")
     else:
-        for nombre, ruta in archivos:
-            st.markdown(f"<div class='card'>📄 {nombre}</div>", unsafe_allow_html=True)
+        for nombre, ruta in archivos_base:
+
+            st.write("📄", nombre)
 
             with open(ruta, "rb") as f:
                 st.download_button(
-                    label=f"📥 {nombre}",
+                    label=f"Descargar {nombre}",
                     data=f,
                     file_name=nombre,
-                    key=f"base_{nombre}"
+                    key=nombre
                 )
 
+    # =========================
     # REGISTROS
+    # =========================
     st.markdown("### 📄 Registros")
 
     carpeta_reg = os.path.join(base_registros, actividad_sel)
-    registros = {}
 
     if os.path.exists(carpeta_reg):
+
         for root, dirs, files in os.walk(carpeta_reg):
             for f in files:
                 if f.endswith(".pdf"):
                     subtipo = os.path.basename(root)
-                    registros.setdefault(subtipo, []).append((f, os.path.join(root, f)))
-
-    if not registros:
-        st.warning("⚠️ No hay registros")
-    else:
-        for subtipo, archivos_reg in registros.items():
-            st.markdown(f"#### 📁 {subtipo.upper()}")
-
-            for nombre, ruta in archivos_reg:
-                st.markdown(f"<div class='card'>📄 {nombre}</div>", unsafe_allow_html=True)
-
-                with open(ruta, "rb") as f:
-                    st.download_button(
-                        label=f"📥 {nombre}",
-                        data=f,
-                        file_name=nombre,
-                        key=f"{subtipo}_{nombre}"
-                    )
+                    st.write(f"📁 {subtipo} → {f}")
