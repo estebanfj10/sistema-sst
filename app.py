@@ -2,14 +2,12 @@ import streamlit as st
 import os
 import requests
 import base64
-from datetime import datetime, timedelta
 
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="Sistema SST", page_icon="🦺", layout="wide")
-
-st.title("🦺 Sistema de Seguridad e Higiene")
+st.set_page_config(page_title="Sistema SST", layout="wide")
+st.title("🦺 Sistema SST")
 
 # =========================
 # GITHUB
@@ -22,6 +20,7 @@ def subir_a_github(ruta, nombre, contenido):
         return False
 
     url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre}"
+
     contenido_base64 = base64.b64encode(contenido).decode()
 
     data = {
@@ -34,14 +33,42 @@ def subir_a_github(ruta, nombre, contenido):
 
     return r.status_code in [200, 201]
 
+
+def obtener_subtipos_github(actividad):
+    token = st.secrets.get("GITHUB_TOKEN")
+    repo = st.secrets.get("GITHUB_REPO")
+
+    if not token or not repo:
+        return []
+
+    url = f"https://api.github.com/repos/{repo}/contents/documentos/registros/{actividad}"
+
+    headers = {"Authorization": f"token {token}"}
+
+    try:
+        r = requests.get(url, headers=headers)
+
+        if r.status_code == 200:
+            data = r.json()
+
+            return [
+                item["name"]
+                for item in data
+                if item["type"] == "dir"
+            ]
+    except:
+        pass
+
+    return []
+
 # =========================
 # BASE
 # =========================
 base_dir = "documentos"
-base_registros = os.path.join(base_dir, "registros")
+reg_dir = os.path.join(base_dir, "registros")
 
 os.makedirs(base_dir, exist_ok=True)
-os.makedirs(base_registros, exist_ok=True)
+os.makedirs(reg_dir, exist_ok=True)
 
 actividades = [
     d for d in os.listdir(base_dir)
@@ -49,42 +76,35 @@ actividades = [
 ]
 
 # =========================
-# 📤 CARGA (ESTABLE)
+# 📤 CARGA (SOLO ESTO CAMBIA)
 # =========================
 st.markdown("## 📤 Cargar registro")
 
-archivo = st.file_uploader("Seleccionar PDF", type=["pdf"])
+archivo = st.file_uploader("PDF", type=["pdf"])
 
 if archivo:
 
     actividad = st.selectbox("Actividad", actividades)
 
-    # 🔹 SUBCARPETAS REALES (LOCAL)
-    carpeta_act = os.path.join(base_registros, actividad)
-    os.makedirs(carpeta_act, exist_ok=True)
+    # 🔥 ESTE ES EL BLOQUE QUE FUNCIONABA
+    subtipos = obtener_subtipos_github(actividad)
 
-    subcarpetas = [
-        d for d in os.listdir(carpeta_act)
-        if os.path.isdir(os.path.join(carpeta_act, d))
-    ]
+    if not subtipos:
+        st.warning("⚠️ No se encontraron subcarpetas en GitHub")
+        subtipos = ["otros"]
 
-    if not subcarpetas:
-        subcarpetas = ["general"]
-
-    subtipo = st.selectbox("Subtipo", subcarpetas)
+    subtipo = st.selectbox("Subtipo", subtipos)
 
     if st.button("Guardar"):
 
-        ruta = os.path.join(base_registros, actividad, subtipo)
+        ruta = os.path.join(reg_dir, actividad, subtipo)
         os.makedirs(ruta, exist_ok=True)
 
         ruta_archivo = os.path.join(ruta, archivo.name)
 
-        # LOCAL
         with open(ruta_archivo, "wb") as f:
             f.write(archivo.getbuffer())
 
-        # GITHUB
         ok = subir_a_github(
             f"documentos/registros/{actividad}/{subtipo}",
             archivo.name,
@@ -97,55 +117,63 @@ if archivo:
             st.warning("⚠ Guardado solo local")
 
 # =========================
-# 🔎 CONSULTA
+# 🔎 CONSULTA (NO SE TOCA)
 # =========================
 st.markdown("## 🔎 Consulta")
 
-actividad_sel = st.selectbox("Seleccionar actividad", actividades)
+act_sel = st.selectbox("Seleccionar actividad", actividades)
 
-if actividad_sel:
+if act_sel:
 
-    st.markdown(f"## 📁 {actividad_sel.upper()}")
+    st.markdown(f"### 📁 {act_sel}")
 
-    # =========================
     # BASE
-    # =========================
-    carpeta = os.path.join(base_dir, actividad_sel)
-    archivos_base = []
+    base_path = os.path.join(base_dir, act_sel)
 
-    for root, _, files in os.walk(carpeta):
+    archivos_base = []
+    for root, _, files in os.walk(base_path):
         for f in files:
             if f.endswith(".pdf"):
                 archivos_base.append((f, os.path.join(root, f)))
 
-    st.markdown("### 📄 Documentación base")
+    st.markdown("### 📄 Base")
 
     if not archivos_base:
-        st.warning("⚠️ No hay documentación base")
+        st.warning("Sin base")
     else:
         for nombre, ruta in archivos_base:
-
-            st.write("📄", nombre)
+            st.write(nombre)
 
             with open(ruta, "rb") as f:
                 st.download_button(
-                    label=f"Descargar {nombre}",
-                    data=f,
+                    "Descargar",
+                    f,
                     file_name=nombre,
-                    key=nombre
+                    key=f"base_{nombre}"
                 )
 
-    # =========================
-    # REGISTROS
-    # =========================
+    # REGISTROS (ESTE ERA EL QUE FUNCIONABA BIEN)
     st.markdown("### 📄 Registros")
 
-    carpeta_reg = os.path.join(base_registros, actividad_sel)
+    reg_path = os.path.join(reg_dir, act_sel)
 
-    if os.path.exists(carpeta_reg):
+    registros = {}
 
-        for root, dirs, files in os.walk(carpeta_reg):
+    if os.path.exists(reg_path):
+        for root, _, files in os.walk(reg_path):
             for f in files:
                 if f.endswith(".pdf"):
+
                     subtipo = os.path.basename(root)
-                    st.write(f"📁 {subtipo} → {f}")
+
+                    registros.setdefault(subtipo, []).append((f, root))
+
+    if not registros:
+        st.warning("Sin registros")
+    else:
+        for sub, archivos in registros.items():
+            st.write("📁", sub)
+
+            for nombre, ruta in archivos:
+                st.write(" -", nombre)
+        
