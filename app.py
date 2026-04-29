@@ -52,7 +52,11 @@ h2, h3 {color: #1f4e79;}
 # =========================
 def subir_a_github(ruta, nombre_archivo, contenido):
 
-    token = st.secrets["GITHUB_TOKEN"]
+    token = st.secrets.get("GITHUB_TOKEN")
+
+if not token:
+    st.error("❌ Falta configurar GITHUB_TOKEN en Secrets")
+    st.stop()
     repo = "TU_USUARIO/sistema-sst"  # 🔴 CAMBIAR
 
     url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre_archivo}"
