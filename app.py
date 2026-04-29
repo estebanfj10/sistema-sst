@@ -40,7 +40,6 @@ def subir_a_github(ruta, nombre, contenido):
         return False
 
     url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre}"
-
     contenido_base64 = base64.b64encode(contenido).decode()
 
     data = {
@@ -49,7 +48,6 @@ def subir_a_github(ruta, nombre, contenido):
     }
 
     headers = {"Authorization": f"token {token}"}
-
     r = requests.put(url, json=data, headers=headers)
 
     return r.status_code in [200, 201]
@@ -66,7 +64,6 @@ def evaluar_vencimiento(ruta, nombre):
     }
 
     tipo = next((t for t in vigencias if t in nombre.lower()), None)
-
     if not tipo:
         return None
 
@@ -140,7 +137,7 @@ if actividad_sel:
     st.markdown(f"## 📁 {actividad_sel.upper()}")
 
     # =========================
-    # BASE
+    # 📄 BASE
     # =========================
     carpeta = os.path.join(base_dir, actividad_sel)
     archivos = []
@@ -164,58 +161,78 @@ if actividad_sel:
                     label=f"📥 {nombre}",
                     data=f,
                     file_name=nombre,
-                    key=nombre
+                    key=f"base_{nombre}"
                 )
 
     # CONTROL BASE
     requisitos_base = ["procedimiento", "permiso", "checklist"]
 
-    faltantes = [
+    faltantes_base = [
         r for r in requisitos_base
         if not any(r in a[0].lower() for a in archivos)
     ]
 
-    if faltantes:
-        st.error(f"❌ Faltan: {', '.join(faltantes)}")
+    if faltantes_base:
+        st.error(f"❌ Faltan: {', '.join(faltantes_base)}")
     else:
         st.success("✔ Base completa")
 
     # =========================
-    # REGISTROS
+    # 📄 REGISTROS (ARREGLADO)
     # =========================
     st.markdown("### 📄 Registros")
 
     carpeta_reg = os.path.join(base_registros, actividad_sel)
 
-    archivos_reg = []
+    registros = {}
 
     if os.path.exists(carpeta_reg):
-        for root, _, files in os.walk(carpeta_reg):
+
+        for root, dirs, files in os.walk(carpeta_reg):
             for f in files:
                 if f.endswith(".pdf"):
-                    archivos_reg.append((f, root))
 
-    if not archivos_reg:
+                    subtipo = os.path.basename(root)
+
+                    if subtipo not in registros:
+                        registros[subtipo] = []
+
+                    registros[subtipo].append((f, os.path.join(root, f)))
+
+    if not registros:
         st.warning("⚠️ No hay registros")
     else:
-        for nombre, ruta in archivos_reg:
+        for subtipo, archivos_reg in registros.items():
 
-            tipo = os.path.basename(ruta)
+            st.markdown(f"#### 📁 {subtipo.upper()}")
 
-            st.markdown(f"""
-            <div class='card'>
-            📄 {nombre}<br>
-            <small>{tipo}</small>
-            </div>
-            """, unsafe_allow_html=True)
+            for nombre, ruta in archivos_reg:
+
+                st.markdown(f"<div class='card'>📄 {nombre}</div>", unsafe_allow_html=True)
+
+                with open(ruta, "rb") as f:
+                    st.download_button(
+                        label=f"📥 {nombre}",
+                        data=f,
+                        file_name=nombre,
+                        key=f"{subtipo}_{nombre}"
+                    )
 
     # CONTROL REGISTROS
     requisitos = ["permiso", "ats", "checklist"]
 
-    faltantes = [
-        r for r in requisitos
-        if not any(r in a[0].lower() for a in archivos_reg)
-    ]
+    faltantes = []
+
+    for r in requisitos:
+        encontrado = False
+
+        for archivos_reg in registros.values():
+            if any(r in nombre.lower() for nombre, _ in archivos_reg):
+                encontrado = True
+                break
+
+        if not encontrado:
+            faltantes.append(r)
 
     if faltantes:
         st.error(f"❌ Faltan: {', '.join(faltantes)}")
