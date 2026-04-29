@@ -30,7 +30,7 @@ body {background-color: #eef2f7;}
 """, unsafe_allow_html=True)
 
 # =========================
-# GITHUB
+# 🔥 GITHUB
 # =========================
 def subir_a_github(ruta, nombre, contenido):
     token = st.secrets.get("GITHUB_TOKEN")
@@ -51,6 +51,37 @@ def subir_a_github(ruta, nombre, contenido):
     r = requests.put(url, json=data, headers=headers)
 
     return r.status_code in [200, 201]
+
+
+def obtener_tipos_github(actividad):
+    token = st.secrets.get("GITHUB_TOKEN")
+    repo = st.secrets.get("GITHUB_REPO")
+
+    if not token or not repo:
+        return []
+
+    url = f"https://api.github.com/repos/{repo}/contents/documentos/registros/{actividad}"
+
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github+json"
+    }
+
+    try:
+        r = requests.get(url, headers=headers)
+
+        if r.status_code == 200:
+            data = r.json()
+
+            return [
+                item["name"]
+                for item in data
+                if item["type"] == "dir"
+            ]
+    except:
+        pass
+
+    return []
 
 # =========================
 # VENCIMIENTOS
@@ -102,7 +133,13 @@ if archivo:
 
     actividad = st.selectbox("Actividad", actividades)
 
-    tipo = st.selectbox("Tipo", ["permiso", "ats", "checklist", "capacitacion"])
+    tipos = obtener_tipos_github(actividad)
+
+    if not tipos:
+        st.warning("⚠️ No se encontraron subcarpetas en GitHub")
+        tipos = ["otros"]
+
+    tipo = st.selectbox("Tipo", tipos)
 
     if st.button("Guardar"):
 
@@ -121,7 +158,7 @@ if archivo:
         )
 
         if ok:
-            st.success("✔ Guardado en GitHub")
+            st.success(f"✔ Guardado en {actividad}/{tipo} (GitHub OK)")
         else:
             st.warning("⚠ Guardado local OK")
 
@@ -137,7 +174,7 @@ if actividad_sel:
     st.markdown(f"## 📁 {actividad_sel.upper()}")
 
     # =========================
-    # 📄 BASE
+    # BASE
     # =========================
     carpeta = os.path.join(base_dir, actividad_sel)
     archivos = []
@@ -178,7 +215,7 @@ if actividad_sel:
         st.success("✔ Base completa")
 
     # =========================
-    # 📄 REGISTROS (ARREGLADO)
+    # REGISTROS
     # =========================
     st.markdown("### 📄 Registros")
 
