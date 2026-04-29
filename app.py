@@ -32,73 +32,10 @@ h1 {color: #1f4e79;}
 """, unsafe_allow_html=True)
 
 # =========================
-# 🔥 FUNCIONES GITHUB
+# 🔥 GITHUB
 # =========================
-def obtener_actividades_github():
-    token = st.secrets.get("GITHUB_TOKEN")
-    repo = st.secrets.get("GITHUB_REPO")
-
-    if not token or not repo:
-        return []
-
-    url = f"https://api.github.com/repos/{repo}/contents/documentos"
-    headers = {
-        "Authorization": f"token {token}",
-        "Accept": "application/vnd.github+json"
-    }
-
-    try:
-        r = requests.get(url, headers=headers)
-        if r.status_code == 200:
-            data = r.json()
-            return [
-                item["name"]
-                for item in data
-                if item["type"] == "dir" and item["name"] != "registros"
-            ]
-    except:
-        pass
-
-    return []
-
-
-def obtener_tipos_github(actividad):
-    token = st.secrets.get("GITHUB_TOKEN")
-    repo = st.secrets.get("GITHUB_REPO")
-
-    if not token or not repo:
-        return []
-
-    url = f"https://api.github.com/repos/{repo}/contents/documentos/registros/{actividad}"
-
-    headers = {
-        "Authorization": f"token {token}",
-        "Accept": "application/vnd.github+json"
-    }
-
-    try:
-        r = requests.get(url, headers=headers)
-
-        if r.status_code == 200:
-            data = r.json()
-
-            carpetas = []
-            for item in data:
-                if item.get("type") == "dir":
-                    carpetas.append(item.get("name"))
-
-            return sorted(carpetas)
-
-        else:
-            st.warning(f"GitHub status: {r.status_code}")
-
-    except Exception as e:
-        st.error(f"Error GitHub: {e}")
-
-    return []
-
-
 def subir_a_github(ruta, nombre_archivo, contenido):
+
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
 
@@ -128,6 +65,7 @@ def subir_a_github(ruta, nombre_archivo, contenido):
 # VENCIMIENTOS
 # =========================
 def evaluar_vencimiento(ruta, nombre):
+
     vigencias = {
         "capacitacion": 365,
         "programa": 365,
@@ -139,6 +77,7 @@ def evaluar_vencimiento(ruta, nombre):
     }
 
     tipo = next((t for t in vigencias if t in nombre.lower()), None)
+
     if not tipo:
         return None
 
@@ -153,7 +92,7 @@ def evaluar_vencimiento(ruta, nombre):
         return "🟢 VIGENTE"
 
 # =========================
-# BASE LOCAL (no se rompe)
+# BASE
 # =========================
 base_dir = "documentos"
 base_registros = os.path.join(base_dir, "registros")
@@ -161,13 +100,10 @@ base_registros = os.path.join(base_dir, "registros")
 os.makedirs(base_dir, exist_ok=True)
 os.makedirs(base_registros, exist_ok=True)
 
-# =========================
-# ACTIVIDADES DESDE GITHUB
-# =========================
-actividades = obtener_actividades_github()
-
-if not actividades:
-    st.warning("⚠️ No se pudieron leer actividades desde GitHub")
+actividades = [
+    d for d in os.listdir(base_dir)
+    if os.path.isdir(os.path.join(base_dir, d)) and d != "registros"
+]
 
 # =========================
 # 📤 CARGA REGISTROS
@@ -200,11 +136,9 @@ if archivo:
 
         ruta_archivo = os.path.join(ruta, archivo.name)
 
-        # Guardado local
         with open(ruta_archivo, "wb") as f:
             f.write(archivo.getbuffer())
 
-        # Guardado en GitHub
         ok = subir_a_github(
             f"documentos/registros/{actividad}/{tipo}",
             archivo.name,
@@ -212,7 +146,7 @@ if archivo:
         )
 
         if ok:
-            st.success("✔ Guardado en GitHub (permanente)")
+            st.success(f"✔ Guardado en REGISTROS/{actividad}/{tipo} (GitHub OK)")
         else:
             st.warning("⚠ Guardado local OK, pero falló GitHub")
 
@@ -221,10 +155,21 @@ if archivo:
 # =========================
 st.markdown("### 🔎 Búsqueda")
 
-actividad_sel = st.selectbox("Seleccionar actividad", actividades)
+consulta = st.text_input("Buscar actividad")
+
+actividad_sel = None
+
+if consulta:
+    for act in actividades:
+        if act in consulta.lower():
+            actividad_sel = act
+            break
+
+    if not actividad_sel:
+        actividad_sel = st.selectbox("Seleccionar:", actividades)
 
 # =========================
-# DOCUMENTACIÓN BASE (local)
+# DOCUMENTACIÓN BASE + CONTROL
 # =========================
 if actividad_sel:
 
@@ -236,13 +181,93 @@ if actividad_sel:
     for root, _, files in os.walk(carpeta):
         for f in files:
             if f.endswith(".pdf"):
-                archivos.append(f)
+                archivos.append((f, os.path.join(root, f)))
 
-    if archivos:
-        for f in archivos:
-            st.markdown(f"<div class='card'>📄 {f}</div>", unsafe_allow_html=True)
-    else:
+    if not archivos:
         st.warning("⚠️ No hay documentación base")
+    else:
+        for nombre, ruta in archivos:
+            st.markdown(f"<div class='card'>📄 {nombre}</div>", unsafe_allow_html=True)
+
+            with open(ruta, "rb") as f:
+                st.download_button("📥 Descargar", f, file_name=nombre)
+
+    requisitos = ["procedimiento", "permiso", "checklist", "emergencia"]
+
+    faltantes = [
+        r for r in requisitos
+        if not any(r in a[0].lower() for a in archivos)
+    ]
+
+    if faltantes:
+        st.error(f"❌ Faltan: {', '.join(faltantes)}")
+    else:
+        st.success("✔ Documentación completa")
+
+# =========================
+# 📂 REGISTROS (VISUAL)
+# =========================
+    st.markdown("### 📂 Registros cargados")
+
+    carpeta_reg = os.path.join(base_registros, actividad_sel)
+
+    if os.path.exists(carpeta_reg):
+
+        tipos = [
+            d for d in os.listdir(carpeta_reg)
+            if os.path.isdir(os.path.join(carpeta_reg, d))
+        ]
+
+        if tipos:
+            for t in tipos:
+                ruta_tipo = os.path.join(carpeta_reg, t)
+
+                archivos = [
+                    f for f in os.listdir(ruta_tipo)
+                    if f.endswith(".pdf")
+                ]
+
+                st.write(f"📁 {t} ({len(archivos)})")
+
+        else:
+            st.info("No hay registros en esta actividad")
+
+    else:
+        st.info("No hay registros para esta actividad")
+
+# =========================
+# ALERTAS
+# =========================
+st.markdown("---")
+st.markdown("## 🚨 Alertas")
+
+alertas = []
+
+for root, _, files in os.walk(base_registros):
+    for f in files:
+        if f.endswith(".pdf"):
+            estado = evaluar_vencimiento(os.path.join(root, f), f)
+            if estado and ("🔴" in estado or "🟡" in estado):
+                alertas.append(f"{estado} - {f}")
+
+if alertas:
+    for a in alertas:
+        st.write(a)
+else:
+    st.success("✔ Sin alertas")
+
+# =========================
+# PANEL
+# =========================
+st.markdown("---")
+st.markdown("## 📊 Panel")
+
+total = len(actividades)
+docs = sum(len(files) for _, _, files in os.walk(base_registros))
+
+c1, c2 = st.columns(2)
+c1.metric("Actividades", total)
+c2.metric("Registros", docs)
 
 # =========================
 # SIDEBAR
