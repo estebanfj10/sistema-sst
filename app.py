@@ -176,28 +176,22 @@ st.markdown("## 📤 Cargar documento (REGISTRO)")
 
 archivo = st.file_uploader("Seleccionar PDF", type=["pdf"])
 
-if archivo and actividades:
+if archivo:
 
     actividad = st.selectbox("Actividad", actividades)
 
-    # 🔥 TIPOS DESDE GITHUB + BASE
-    tipos_github = obtener_tipos_github(actividad)
-    st.write("Actividad seleccionada:", actividad)
-st.write("Tipos desde GitHub:", tipos_github)
-
-    tipos_base = [
-        "ats",
-        "permiso",
-        "checklist",
-        "capacitacion",
-        "inspeccion",
-        "incidente",
-        "mantenimiento"
-    ]
-
-    tipos = sorted(list(set(tipos_base + tipos_github)))
-
-    tipo = st.selectbox("Tipo de registro", tipos)
+    tipo = st.selectbox(
+        "Tipo de registro",
+        [
+            "ats",
+            "permiso",
+            "checklist",
+            "capacitacion",
+            "inspeccion",
+            "incidente",
+            "mantenimiento"
+        ]
+    )
 
     if st.button("Guardar archivo"):
 
@@ -206,11 +200,11 @@ st.write("Tipos desde GitHub:", tipos_github)
 
         ruta_archivo = os.path.join(ruta, archivo.name)
 
-        # LOCAL
+        # Guardado local
         with open(ruta_archivo, "wb") as f:
             f.write(archivo.getbuffer())
 
-        # GITHUB
+        # Guardado en GitHub
         ok = subir_a_github(
             f"documentos/registros/{actividad}/{tipo}",
             archivo.name,
