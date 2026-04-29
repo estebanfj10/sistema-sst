@@ -28,14 +28,17 @@ h1 {color: #1f4e79;}
     box-shadow: 0px 2px 6px rgba(0,0,0,0.1);
     margin-bottom: 10px;
 }
+.small-text {
+    color: gray;
+    font-size: 12px;
+}
 </style>
 """, unsafe_allow_html=True)
 
 # =========================
-# 🔥 FUNCIONES GITHUB
+# 🔥 GITHUB
 # =========================
 def subir_a_github(ruta, nombre_archivo, contenido):
-
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
 
@@ -44,7 +47,6 @@ def subir_a_github(ruta, nombre_archivo, contenido):
 
     try:
         url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre_archivo}"
-
         contenido_base64 = base64.b64encode(contenido).decode()
 
         data = {
@@ -53,17 +55,14 @@ def subir_a_github(ruta, nombre_archivo, contenido):
         }
 
         headers = {"Authorization": f"token {token}"}
-
         r = requests.put(url, json=data, headers=headers)
 
         return r.status_code in [200, 201]
-
     except:
         return False
 
 
 def obtener_subtipos_github(tipo):
-
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
 
@@ -82,13 +81,7 @@ def obtener_subtipos_github(tipo):
 
         if r.status_code == 200:
             data = r.json()
-
-            return [
-                item["name"]
-                for item in data
-                if item["type"] == "dir"
-            ]
-
+            return [item["name"] for item in data if item["type"] == "dir"]
     except:
         pass
 
@@ -98,7 +91,6 @@ def obtener_subtipos_github(tipo):
 # VENCIMIENTOS
 # =========================
 def evaluar_vencimiento(ruta, nombre):
-
     vigencias = {
         "capacitacion": 365,
         "programa": 365,
@@ -110,7 +102,6 @@ def evaluar_vencimiento(ruta, nombre):
     }
 
     tipo = next((t for t in vigencias if t in nombre.lower()), None)
-
     if not tipo:
         return None
 
@@ -134,7 +125,7 @@ os.makedirs(base_dir, exist_ok=True)
 os.makedirs(base_registros, exist_ok=True)
 
 # =========================
-# 🔥 TIPOS (TUS CARPETAS)
+# TIPOS (TUS CARPETAS)
 # =========================
 tipos = [
     "ats",
@@ -148,7 +139,7 @@ tipos = [
 ]
 
 # =========================
-# 📤 CARGA REGISTROS
+# 📤 CARGA
 # =========================
 st.markdown("## 📤 Cargar documento (REGISTRO)")
 
@@ -158,11 +149,10 @@ if archivo:
 
     tipo = st.selectbox("Tipo", tipos)
 
-    # 🔥 SUBTIPOS DINÁMICOS
     subtipos = obtener_subtipos_github(tipo)
 
     if not subtipos:
-        st.warning("⚠️ No se encontraron subcarpetas en GitHub")
+        st.warning("⚠️ No hay subcarpetas en GitHub")
         subtipos = ["otros"]
 
     subtipo = st.selectbox("Subtipo", subtipos)
@@ -174,11 +164,9 @@ if archivo:
 
         ruta_archivo = os.path.join(ruta, archivo.name)
 
-        # LOCAL
         with open(ruta_archivo, "wb") as f:
             f.write(archivo.getbuffer())
 
-        # GITHUB
         ok = subir_a_github(
             f"documentos/registros/{tipo}/{subtipo}",
             archivo.name,
@@ -191,22 +179,61 @@ if archivo:
             st.warning("⚠ Guardado local OK, pero falló GitHub")
 
 # =========================
-# 📂 VISUAL REGISTROS
+# 🔎 CONSULTA
 # =========================
-st.markdown("## 📂 Registros cargados")
+st.markdown("---")
+st.markdown("## 🔎 Consulta de documentación")
 
-for tipo in tipos:
+tipo_sel = st.selectbox("Seleccionar tipo", tipos)
 
-    carpeta_tipo = os.path.join(base_registros, tipo)
+if tipo_sel:
+
+    st.markdown(f"## 📁 {tipo_sel.upper()}")
+
+    carpeta_tipo = os.path.join(base_registros, tipo_sel)
+    archivos_encontrados = []
 
     if os.path.exists(carpeta_tipo):
-
-        st.markdown(f"### 📁 {tipo}")
-
         for root, dirs, files in os.walk(carpeta_tipo):
             for f in files:
                 if f.endswith(".pdf"):
-                    st.write("📄", f)
+                    archivos_encontrados.append((f, root))
+
+    # REGISTROS
+    st.markdown("### 📄 Registros cargados")
+
+    if not archivos_encontrados:
+        st.warning("⚠️ No hay registros cargados")
+    else:
+        for nombre, ruta in archivos_encontrados:
+
+            carpeta_origen = os.path.basename(ruta)
+
+            st.markdown(f"""
+            <div class="card">
+                📄 <b>{nombre}</b><br>
+                <span class="small-text">Subtipo: {carpeta_origen}</span>
+            </div>
+            """, unsafe_allow_html=True)
+
+            with open(os.path.join(ruta, nombre), "rb") as f:
+                st.download_button("📥 Descargar", f, file_name=nombre)
+
+    # CONTROL
+    st.markdown("### 📋 Control de registros")
+
+    requisitos = ["ats", "permiso", "checklist"]
+
+    faltantes = []
+
+    for r in requisitos:
+        if not any(r in a[0].lower() for a in archivos_encontrados):
+            faltantes.append(r)
+
+    if faltantes:
+        st.error(f"❌ Faltan: {', '.join(faltantes)}")
+    else:
+        st.success("✔ Registros completos")
 
 # =========================
 # ALERTAS
