@@ -124,25 +124,31 @@ if archivo:
 
     actividad = st.selectbox("Actividad", actividades)
 
-    # 🔥 leer subcarpetas reales
+    # 🔥 TIPOS BASE
+    tipos_base = ["ats", "permiso", "checklist", "capacitacion", "inspeccion"]
+
     ruta_tipos = os.path.join(base_registros, actividad)
 
+    tipos_detectados = []
+
     if os.path.exists(ruta_tipos):
-        tipos = [
+        tipos_detectados = [
             d for d in os.listdir(ruta_tipos)
             if os.path.isdir(os.path.join(ruta_tipos, d))
         ]
-    else:
-        tipos = []
 
-    if not tipos:
-        tipos = ["ats", "permiso", "checklist"]
+    # 🔥 UNIFICAR
+    tipos = sorted(list(set(tipos_base + tipos_detectados)))
 
     tipo = st.selectbox("Tipo de registro", tipos)
 
+    nuevo_tipo = st.text_input("➕ Crear nuevo tipo (opcional)")
+
+    if nuevo_tipo:
+        tipo = nuevo_tipo.lower()
+
     if st.button("Guardar archivo"):
 
-        # guardar local
         ruta_local = os.path.join(base_registros, actividad, tipo)
         os.makedirs(ruta_local, exist_ok=True)
 
@@ -151,14 +157,13 @@ if archivo:
         with open(ruta_archivo, "wb") as f:
             f.write(archivo.getbuffer())
 
-        # subir a github
         subir_a_github(
             f"documentos/registros/{actividad}/{tipo}",
             archivo.name,
             archivo.getbuffer()
         )
 
-        st.success("✔ Archivo guardado correctamente")
+        st.success(f"✔ Guardado en: {actividad}/{tipo}")
 
 # =========================
 # BUSCADOR
@@ -187,9 +192,7 @@ if actividad_sel:
 
     col1, col2 = st.columns(2)
 
-    # =========================
-    # DOCUMENTACIÓN BASE
-    # =========================
+    # BASE
     with col1:
         st.markdown("### 📄 Documentación base")
 
@@ -215,18 +218,15 @@ if actividad_sel:
                 with open(ruta, "rb") as f:
                     st.download_button("📥 Descargar", f, file_name=nombre)
 
-        # control base
         requisitos = ["procedimiento", "permiso", "checklist", "emergencia"]
         faltantes = [r for r in requisitos if not any(r in a[0].lower() for a in archivos)]
 
         if faltantes:
             st.error(f"❌ Faltan: {', '.join(faltantes)}")
         else:
-            st.success("✔ Completo")
+            st.success("✔ Documentación completa")
 
-    # =========================
     # REGISTROS
-    # =========================
     with col2:
         st.markdown("### 📊 Estado registros")
 
