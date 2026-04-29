@@ -96,9 +96,16 @@ if archivo:
     actividad = st.selectbox("Actividad", actividades)
 
     # 🔥 SIMPLE Y FUNCIONAL (NO SE ROMPE)
-    tipo = st.selectbox(
-        "Tipo de registro",
-        ["ats", "permiso", "checklist", "capacitacion"]
+   tipo = st.selectbox(
+    "Tipo de registro",
+    [
+        "ats",
+        "permiso",
+        "checklist",
+        "capacitacion",
+        "inspeccion",
+        "incidente",
+        "mantenimiento"
     )
 
     if st.button("Guardar archivo"):
