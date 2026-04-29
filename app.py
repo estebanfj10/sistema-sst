@@ -20,19 +20,11 @@ st.title("🦺 Sistema de Seguridad e Higiene")
 st.markdown("""
 <style>
 body {background-color: #eef2f7;}
-h1, h2, h3 {color: #1f4e79;}
-
 .card {
     background: white;
     padding: 15px;
     border-radius: 10px;
-    box-shadow: 0px 2px 6px rgba(0,0,0,0.1);
     margin-bottom: 10px;
-}
-
-.small-text {
-    color: gray;
-    font-size: 12px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -40,55 +32,43 @@ h1, h2, h3 {color: #1f4e79;}
 # =========================
 # GITHUB
 # =========================
-def subir_a_github(ruta, nombre_archivo, contenido):
+def subir_a_github(ruta, nombre, contenido):
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
 
     if not token or not repo:
         return False
 
-    try:
-        url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre_archivo}"
-        contenido_base64 = base64.b64encode(contenido).decode()
+    url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre}"
+    contenido_base64 = base64.b64encode(contenido).decode()
 
-        data = {
-            "message": f"Subida {nombre_archivo}",
-            "content": contenido_base64
-        }
+    data = {
+        "message": f"Subida {nombre}",
+        "content": contenido_base64
+    }
 
-        headers = {"Authorization": f"token {token}"}
-        r = requests.put(url, json=data, headers=headers)
+    headers = {"Authorization": f"token {token}"}
+    r = requests.put(url, json=data, headers=headers)
 
-        return r.status_code in [200, 201]
+    return r.status_code in [200, 201]
 
-    except:
-        return False
 
-def obtener_subtipos_github(tipo):
+def sugerir_tipos_github(actividad):
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
 
     if not token or not repo:
         return []
 
-    url = f"https://api.github.com/repos/{repo}/contents/documentos/registros/{tipo}"
+    url = f"https://api.github.com/repos/{repo}/contents/documentos/registros/{actividad}"
 
-    headers = {
-        "Authorization": f"token {token}",
-        "Accept": "application/vnd.github+json"
-    }
+    headers = {"Authorization": f"token {token}"}
 
     try:
         r = requests.get(url, headers=headers)
-
         if r.status_code == 200:
             data = r.json()
-
-            return [
-                item["name"]
-                for item in data
-                if item["type"] == "dir"
-            ]
+            return [i["name"] for i in data if i["type"] == "dir"]
     except:
         pass
 
@@ -97,8 +77,7 @@ def obtener_subtipos_github(tipo):
 # =========================
 # VENCIMIENTOS
 # =========================
-def evaluar_vencimiento(ruta_archivo, nombre_archivo):
-    nombre = nombre_archivo.lower()
+def evaluar_vencimiento(ruta, nombre):
 
     vigencias = {
         "capacitacion": 365,
@@ -106,27 +85,21 @@ def evaluar_vencimiento(ruta_archivo, nombre_archivo):
         "aviso": 180,
         "seguro": 365,
         "vtv": 365,
-        "licencia": 365 * 5,
+        "licencia": 365*5,
         "apto": 365,
     }
 
-    tipo_detectado = None
+    tipo = next((t for t in vigencias if t in nombre.lower()), None)
 
-    for tipo in vigencias:
-        if tipo in nombre:
-            tipo_detectado = tipo
-            break
-
-    if not tipo_detectado:
+    if not tipo:
         return None
 
-    fecha_archivo = datetime.fromtimestamp(os.path.getmtime(ruta_archivo))
-    fecha_vencimiento = fecha_archivo + timedelta(days=vigencias[tipo_detectado])
-    hoy = datetime.now()
+    fecha = datetime.fromtimestamp(os.path.getmtime(ruta))
+    venc = fecha + timedelta(days=vigencias[tipo])
 
-    if hoy > fecha_vencimiento:
+    if datetime.now() > venc:
         return "🔴 VENCIDO"
-    elif (fecha_vencimiento - hoy).days <= 30:
+    elif (venc - datetime.now()).days <= 30:
         return "🟡 POR VENCER"
     else:
         return "🟢 VIGENTE"
@@ -146,7 +119,7 @@ actividades = [
 ]
 
 # =========================
-# 📤 CARGA (CORRECTA)
+# 📤 CARGA (UNIFICADA)
 # =========================
 st.markdown("## 📤 Cargar documento (REGISTRO)")
 
@@ -154,19 +127,36 @@ archivo = st.file_uploader("Seleccionar PDF", type=["pdf"])
 
 if archivo:
 
-    tipo = st.selectbox("Tipo", actividades)
+    actividad = st.selectbox("Actividad", actividades)
 
-    subtipos = obtener_subtipos_github(tipo)
+    # LOCAL
+    carpeta_local = os.path.join(base_registros, actividad)
+    os.makedirs(carpeta_local, exist_ok=True)
 
-    if not subtipos:
-        st.warning("⚠️ No se encontraron subcarpetas en GitHub")
-        subtipos = ["otros"]
+    tipos_locales = [
+        d for d in os.listdir(carpeta_local)
+        if os.path.isdir(os.path.join(carpeta_local, d))
+    ]
 
-    subtipo = st.selectbox("Subtipo", subtipos)
+    # GITHUB
+    tipos_github = sugerir_tipos_github(actividad)
+
+    # UNIFICACIÓN
+    tipos = sorted(list(set(tipos_locales + tipos_github)))
+
+    if not tipos:
+        tipos = ["permiso", "ats", "checklist"]
+
+    tipo = st.selectbox("Tipo", tipos)
+
+    nuevo = st.text_input("O crear nuevo tipo")
+
+    if nuevo:
+        tipo = nuevo.lower().strip()
 
     if st.button("Guardar archivo"):
 
-        ruta = os.path.join(base_registros, tipo, subtipo)
+        ruta = os.path.join(base_registros, actividad, tipo)
         os.makedirs(ruta, exist_ok=True)
 
         ruta_archivo = os.path.join(ruta, archivo.name)
@@ -175,100 +165,109 @@ if archivo:
             f.write(archivo.getbuffer())
 
         ok = subir_a_github(
-            f"documentos/registros/{tipo}/{subtipo}",
+            f"documentos/registros/{actividad}/{tipo}",
             archivo.name,
             archivo.getbuffer()
         )
 
         if ok:
-            st.success(f"✔ Guardado en {tipo}/{subtipo}")
+            st.success(f"✔ Guardado en {actividad}/{tipo}")
         else:
             st.warning("⚠ Guardado local OK")
 
 # =========================
-# RESTO DEL SISTEMA
+# 🔎 CONSULTA
 # =========================
-st.markdown("### 🔎 Búsqueda")
+st.markdown("## 🔎 Consulta")
 
-consulta = st.text_input("Buscar actividad")
-
-actividad_sel = None
-
-if consulta:
-    for act in actividades:
-        if act in consulta.lower():
-            actividad_sel = act
-            break
-
-    if not actividad_sel:
-        actividad_sel = st.selectbox("Elegir:", actividades)
+actividad_sel = st.selectbox("Seleccionar actividad", actividades)
 
 if actividad_sel:
 
     st.markdown(f"## 📁 {actividad_sel.upper()}")
 
-    col1, col2 = st.columns(2)
-
     # BASE
-    with col1:
-        st.markdown("### 📄 Documentación base")
+    carpeta = os.path.join(base_dir, actividad_sel)
+    archivos = []
 
-        carpeta = os.path.join(base_dir, actividad_sel)
-        archivos = []
+    for root, _, files in os.walk(carpeta):
+        for f in files:
+            if f.endswith(".pdf"):
+                archivos.append((f, os.path.join(root, f)))
 
-        for root, dirs, files in os.walk(carpeta):
-            for file in files:
-                if file.endswith(".pdf"):
-                    archivos.append((file, os.path.join(root, file), root))
+    st.markdown("### 📄 Documentación base")
 
-        if not archivos:
-            st.warning("⚠️ No hay documentación base")
+    if not archivos:
+        st.warning("⚠️ No hay documentación base")
+    else:
+        for nombre, ruta in archivos:
+            st.markdown(f"<div class='card'>📄 {nombre}</div>", unsafe_allow_html=True)
 
-        # CONTROL INTELIGENTE BASE
-        st.markdown("### 📋 Control documentación base")
+    # CONTROL BASE
+    st.markdown("### 📋 Control documentación base")
 
-        criticas = [
-            "altura", "excavacion", "izaje",
-            "trabajo en caliente", "espacio confinado", "electricidad"
-        ]
+    criticas = [
+        "altura","excavacion","izaje",
+        "trabajo en caliente","espacio confinado","electricidad"
+    ]
 
-        if actividad_sel.lower() in criticas:
-            requisitos = ["procedimiento", "permiso", "checklist", "emergencia"]
-            faltantes = [r for r in requisitos if not any(r in a[0].lower() for a in archivos)]
+    if actividad_sel.lower() in criticas:
+        requisitos = ["procedimiento","permiso","checklist","emergencia"]
+        faltantes = [r for r in requisitos if not any(r in a[0].lower() for a in archivos)]
 
-            if faltantes:
-                st.error(f"❌ Faltan: {', '.join(faltantes)}")
-            else:
-                st.success("✔ Completo")
+        if faltantes:
+            st.error(f"❌ Faltan: {', '.join(faltantes)}")
         else:
-            if archivos:
-                st.success("✔ Tiene documentación")
-            else:
-                st.error("❌ Falta documentación")
+            st.success("✔ Completo")
+    else:
+        if archivos:
+            st.success("✔ Tiene documentación")
+        else:
+            st.error("❌ Falta documentación")
 
     # REGISTROS
-    with col2:
-        st.markdown("### 📊 Estado real (REGISTROS)")
+    st.markdown("### 📊 Registros")
 
-        carpeta_reg = os.path.join(base_registros, actividad_sel)
-        archivos_reg = []
+    carpeta_reg = os.path.join(base_registros, actividad_sel)
+    archivos_reg = []
 
-        if os.path.exists(carpeta_reg):
-            for root, dirs, files in os.walk(carpeta_reg):
-                for file in files:
-                    if file.endswith(".pdf"):
-                        archivos_reg.append(file)
+    if os.path.exists(carpeta_reg):
+        for root, _, files in os.walk(carpeta_reg):
+            for f in files:
+                if f.endswith(".pdf"):
+                    archivos_reg.append(f)
 
-        if actividad_sel.lower() in criticas:
-            requisitos = ["permiso", "ats", "checklist"]
-            faltantes = [r for r in requisitos if not any(r in a.lower() for a in archivos_reg)]
+    if actividad_sel.lower() in criticas:
+        requisitos = ["permiso","ats","checklist"]
+        faltantes = [r for r in requisitos if not any(r in a.lower() for a in archivos_reg)]
 
-            if faltantes:
-                st.error(f"❌ Faltan: {', '.join(faltantes)}")
-            else:
-                st.success("✔ Registros completos")
+        if faltantes:
+            st.error(f"❌ Faltan: {', '.join(faltantes)}")
         else:
-            if archivos_reg:
-                st.success("✔ Tiene registros")
-            else:
-                st.error("❌ Falta registro")
+            st.success("✔ Registros completos")
+    else:
+        if archivos_reg:
+            st.success("✔ Tiene registros")
+        else:
+            st.error("❌ Falta registro")
+
+# =========================
+# ALERTAS
+# =========================
+st.markdown("---")
+st.markdown("## 🚨 Alertas")
+
+alertas = []
+
+for root, _, files in os.walk(base_registros):
+    for f in files:
+        if f.endswith(".pdf"):
+            estado = evaluar_vencimiento(os.path.join(root, f), f)
+            if estado and ("🔴" in estado or "🟡" in estado):
+                alertas.append(f"{estado} - {f}")
+
+if alertas:
+    for a in alertas:
+        st.write(a)
+else:
+    st.success("✔ Sin alertas")
