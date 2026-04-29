@@ -15,37 +15,19 @@ if os.path.exists("banner.png"):
 st.title("🦺 Sistema de Seguridad e Higiene")
 
 # =========================
-# ESTILOS
-# =========================
-st.markdown("""
-<style>
-body {background-color: #eef2f7;}
-h1, h2, h3 {color: #1f4e79;}
-
-.card {
-    background: white;
-    padding: 15px;
-    border-radius: 10px;
-    box-shadow: 0px 2px 6px rgba(0,0,0,0.1);
-    margin-bottom: 10px;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# =========================
 # GITHUB CONFIG
 # =========================
 token = st.secrets.get("GITHUB_TOKEN")
 repo = st.secrets.get("GITHUB_REPO")
 
 # =========================
-# LEER CARPETAS DESDE GITHUB
+# FUNCIONES GITHUB
 # =========================
-def obtener_tipos_desde_github(actividad):
+def obtener_carpetas_github(ruta):
     if not token or not repo:
         return []
 
-    url = f"https://api.github.com/repos/{repo}/contents/documentos/registros/{actividad}"
+    url = f"https://api.github.com/repos/{repo}/contents/{ruta}"
     headers = {"Authorization": f"token {token}"}
 
     try:
@@ -58,16 +40,12 @@ def obtener_tipos_desde_github(actividad):
 
     return []
 
-# =========================
-# SUBIR A GITHUB
-# =========================
 def subir_a_github(ruta, nombre, contenido):
     if not token or not repo:
         return False
 
     try:
         url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre}"
-
         contenido_base64 = base64.b64encode(contenido).decode()
 
         data = {
@@ -96,33 +74,36 @@ actividades = [
 ]
 
 # =========================
-# CARGA DE REGISTROS
+# 📂 CARGA REGISTROS (CORRECTA)
 # =========================
-st.markdown("## 📤 Cargar documento (REGISTRO)")
+st.markdown("## 📂 Cargar REGISTRO")
 
 archivo = st.file_uploader("Seleccionar PDF", type=["pdf"])
 
 if archivo:
 
-    actividad = st.selectbox("Actividad", actividades)
+    # 🔥 ACTIVIDADES DE REGISTROS DESDE GITHUB
+    actividades_reg = obtener_carpetas_github("documentos/registros")
 
-    # 🔥 OBTENER TIPOS DESDE GITHUB
-    tipos_github = obtener_tipos_desde_github(actividad)
+    if not actividades_reg:
+        actividades_reg = actividades  # fallback
 
-    # 🔥 TIPOS BASE
-    tipos_base = ["ats", "permiso", "checklist"]
+    actividad = st.selectbox("Actividad (REGISTROS)", actividades_reg)
 
-    # 🔥 UNIFICAR
-    tipos = sorted(list(set(tipos_base + tipos_github)))
+    # 🔥 SUBCARPETAS REALES
+    tipos = obtener_carpetas_github(f"documentos/registros/{actividad}")
 
-    tipo = st.selectbox("Tipo de registro", tipos)
+    if not tipos:
+        tipos = ["ats", "permiso", "checklist"]
 
-    nuevo_tipo = st.text_input("➕ Crear nuevo tipo (opcional)")
+    tipo = st.selectbox("Carpeta destino", tipos)
+
+    nuevo_tipo = st.text_input("➕ Crear nueva carpeta (opcional)")
 
     if nuevo_tipo:
         tipo = nuevo_tipo.lower()
 
-    if st.button("Guardar archivo"):
+    if st.button("Guardar en REGISTROS"):
 
         # LOCAL
         ruta_local = os.path.join(base_registros, actividad, tipo)
@@ -140,10 +121,10 @@ if archivo:
             archivo.getbuffer()
         )
 
-        st.success(f"✔ Guardado en {actividad}/{tipo}")
+        st.success(f"✔ Guardado en REGISTROS/{actividad}/{tipo}")
 
 # =========================
-# BUSCADOR
+# 🔎 BUSCADOR
 # =========================
 st.markdown("### 🔎 Buscar actividad")
 
@@ -161,7 +142,7 @@ if consulta:
         actividad_sel = st.selectbox("Seleccionar:", actividades)
 
 # =========================
-# DOCUMENTACIÓN
+# DOCUMENTACIÓN BASE + CONTROL
 # =========================
 if actividad_sel:
 
@@ -174,15 +155,26 @@ if actividad_sel:
         st.markdown("### 📄 Documentación base")
 
         carpeta = os.path.join(base_dir, actividad_sel)
-
         archivos = []
+
         for root, _, files in os.walk(carpeta):
             for f in files:
                 if f.endswith(".pdf"):
                     archivos.append(f)
 
-        for f in archivos:
-            st.markdown(f"📄 {f}")
+        if not archivos:
+            st.warning("⚠️ No hay documentación base")
+        else:
+            for f in archivos:
+                st.write("📄", f)
+
+        requisitos = ["procedimiento", "permiso", "checklist", "emergencia"]
+        faltantes = [r for r in requisitos if not any(r in a.lower() for a in archivos)]
+
+        if faltantes:
+            st.error(f"❌ Faltan: {', '.join(faltantes)}")
+        else:
+            st.success("✔ Documentación completa")
 
     # REGISTROS
     with col2:
@@ -207,7 +199,7 @@ if actividad_sel:
         if faltantes:
             st.error(f"❌ Faltan: {', '.join(faltantes)}")
         else:
-            st.success("✔ Completo")
+            st.success("✔ Registros completos")
 
 # =========================
 # SIDEBAR
