@@ -47,16 +47,15 @@ h2, h3 {color: #1f4e79;}
 """, unsafe_allow_html=True)
 
 # =========================
-# 🚀 SUBIR A GITHUB (OPCIONAL)
+# 🚀 SUBIR A GITHUB
 # =========================
 def subir_a_github(ruta, nombre_archivo, contenido):
 
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
 
-    # 👉 si no hay config, no rompe
     if not token or not repo:
-        return "local"
+        return False
 
     try:
         url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre_archivo}"
@@ -72,13 +71,10 @@ def subir_a_github(ruta, nombre_archivo, contenido):
 
         r = requests.put(url, json=data, headers=headers)
 
-        if r.status_code in [200, 201]:
-            return "github"
-        else:
-            return "error"
+        return r.status_code in [200, 201]
 
     except:
-        return "error"
+        return False
 
 # =========================
 # 🚨 VENCIMIENTOS
@@ -112,16 +108,14 @@ def evaluar_vencimiento(ruta_archivo, nombre_archivo):
     hoy = datetime.now()
 
     if hoy > fecha_vencimiento:
-        estado = "🔴 VENCIDO"
+        return "🔴 VENCIDO"
     elif (fecha_vencimiento - hoy).days <= 30:
-        estado = "🟡 POR VENCER"
+        return "🟡 POR VENCER"
     else:
-        estado = "🟢 VIGENTE"
-
-    return estado
+        return "🟢 VIGENTE"
 
 # =========================
-# 📁 BASE LOCAL
+# 📁 BASE
 # =========================
 base_dir = "documentos"
 base_registros = os.path.join(base_dir, "registros")
@@ -135,7 +129,7 @@ actividades_disponibles = [
 ]
 
 if not actividades_disponibles:
-    st.warning("⚠️ No hay actividades cargadas en DOCUMENTOS")
+    st.warning("⚠️ No hay actividades cargadas")
 
 # =========================
 # 📤 CARGA
@@ -151,7 +145,7 @@ if archivo_subido:
 
     if st.button("Guardar archivo"):
 
-        # 👉 guardado local (SIEMPRE)
+        # ✅ GUARDADO LOCAL (CLAVE PARA QUE FUNCIONE EL CONTROL)
         ruta_local = os.path.join(base_registros, actividad_final, tipo_final)
         os.makedirs(ruta_local, exist_ok=True)
 
@@ -160,19 +154,14 @@ if archivo_subido:
         with open(ruta_completa, "wb") as f:
             f.write(archivo_subido.getbuffer())
 
-        # 👉 intento GitHub
-        estado = subir_a_github(
+        # ☁️ SUBIDA A GITHUB
+        subir_a_github(
             f"documentos/registros/{actividad_final}/{tipo_final}",
             archivo_subido.name,
             archivo_subido.getbuffer()
         )
 
-        if estado == "github":
-            st.success("✔ Guardado en GitHub + local")
-        elif estado == "local":
-            st.success("✔ Guardado local (sin GitHub)")
-        else:
-            st.warning("⚠️ Guardado local, error en GitHub")
+        st.success("✔ Archivo guardado")
 
 # =========================
 # 🔎 BUSCADOR
@@ -193,17 +182,43 @@ if consulta:
         actividad_detectada = st.selectbox("Elegir:", actividades_disponibles)
 
 # =========================
-# 📁 DOCUMENTOS
+# 📁 DOCUMENTACIÓN + CONTROL
 # =========================
 if actividad_detectada:
 
+    st.markdown(f"## 📁 {actividad_detectada.upper()}")
+
     col1, col2 = st.columns(2)
 
+    # 📄 BASE
     with col1:
         st.markdown("### 📄 Documentación base")
 
+    # 📊 REGISTROS
     with col2:
-        st.markdown("### 📊 Estado registros")
+        st.markdown("### 📊 Estado real")
+
+        requisitos = ["permiso", "ats", "checklist"]
+        faltantes = []
+
+        carpeta_reg = os.path.join(base_registros, actividad_detectada)
+
+        for r in requisitos:
+            encontrado = False
+
+            if os.path.exists(carpeta_reg):
+                for root, dirs, files in os.walk(carpeta_reg):
+                    for file in files:
+                        if r in file.lower():
+                            encontrado = True
+
+            if not encontrado:
+                faltantes.append(r)
+
+        if faltantes:
+            st.error(f"❌ Faltan: {', '.join(faltantes)}")
+        else:
+            st.success("✔ Registros completos")
 
 # =========================
 # 🚨 ALERTAS
@@ -240,18 +255,12 @@ st.markdown("## 📊 Panel")
 
 total = len(actividades_disponibles)
 
-docs = sum([
-    len(files)
-    for _, _, files in os.walk(base_registros)
-])
+docs = sum(len(files) for _, _, files in os.walk(base_registros))
 
 c1, c2 = st.columns(2)
 
-with c1:
-    st.markdown(f"<div class='card'>👷 Actividades<br><h2>{total}</h2></div>", unsafe_allow_html=True)
-
-with c2:
-    st.markdown(f"<div class='card'>📄 Registros<br><h2>{docs}</h2></div>", unsafe_allow_html=True)
+c1.metric("Actividades", total)
+c2.metric("Registros", docs)
 
 # =========================
 # SIDEBAR
