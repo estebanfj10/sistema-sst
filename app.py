@@ -254,27 +254,43 @@ if actividad_sel:
     with col2:
         st.markdown("### 📊 Estado real (REGISTROS)")
 
-        requisitos = ["permiso", "ats", "checklist"]
-        faltantes = []
+        actividades_criticas = [
+            "altura",
+            "excavacion",
+            "izaje",
+            "trabajo en caliente",
+            "espacio confinado",
+            "electricidad"
+        ]
 
         carpeta_reg = os.path.join(base_registros, actividad_sel)
+        archivos_reg = []
 
-        for r in requisitos:
-            encontrado = False
+        if os.path.exists(carpeta_reg):
+            for root, dirs, files in os.walk(carpeta_reg):
+                for file in files:
+                    if file.endswith(".pdf"):
+                        archivos_reg.append(file)
 
-            if os.path.exists(carpeta_reg):
-                for root, dirs, files in os.walk(carpeta_reg):
-                    for file in files:
-                        if r in file.lower():
-                            encontrado = True
+        if actividad_sel.lower() in actividades_criticas:
 
-            if not encontrado:
-                faltantes.append(r)
+            requisitos = ["permiso", "ats", "checklist"]
+            faltantes = []
 
-        if faltantes:
-            st.error(f"❌ Faltan: {', '.join(faltantes)}")
+            for r in requisitos:
+                if not any(r in a.lower() for a in archivos_reg):
+                    faltantes.append(r)
+
+            if faltantes:
+                st.error(f"❌ Faltan: {', '.join(faltantes)}")
+            else:
+                st.success("✔ Registros completos")
+
         else:
-            st.success("✔ Registros completos")
+            if archivos_reg:
+                st.success("✔ Tiene registros")
+            else:
+                st.error("❌ Falta registro")
 
 # =========================
 # 🚨 ALERTAS
