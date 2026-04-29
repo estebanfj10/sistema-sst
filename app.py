@@ -45,7 +45,7 @@ h1, h2, h3 {color: #1f4e79;}
 """, unsafe_allow_html=True)
 
 # =========================
-# 🚀 GITHUB (opcional)
+# 🚀 GITHUB
 # =========================
 def subir_a_github(ruta, nombre_archivo, contenido):
     token = st.secrets.get("GITHUB_TOKEN")
@@ -64,8 +64,8 @@ def subir_a_github(ruta, nombre_archivo, contenido):
         }
 
         headers = {"Authorization": f"token {token}"}
-
         r = requests.put(url, json=data, headers=headers)
+
         return r.status_code in [200, 201]
 
     except:
@@ -139,7 +139,6 @@ if archivo:
 
     if st.button("Guardar archivo"):
 
-        # ✔ GUARDADO LOCAL (clave)
         ruta_local = os.path.join(base_registros, actividad, tipo)
         os.makedirs(ruta_local, exist_ok=True)
 
@@ -148,7 +147,6 @@ if archivo:
         with open(ruta_archivo, "wb") as f:
             f.write(archivo.getbuffer())
 
-        # ☁️ intento GitHub
         subir_a_github(
             f"documentos/registros/{actividad}/{tipo}",
             archivo.name,
@@ -216,20 +214,39 @@ if actividad_sel:
                 with open(ruta, "rb") as f:
                     st.download_button("📥 Descargar", f, file_name=a)
 
-        # ✔ CONTROL BASE
+        # =========================
+        # 📋 CONTROL BASE INTELIGENTE
+        # =========================
         st.markdown("### 📋 Control documentación base")
 
-        requisitos_base = ["procedimiento", "permiso", "checklist", "emergencia"]
-        faltantes = []
+        actividades_criticas = [
+            "altura",
+            "excavacion",
+            "izaje",
+            "trabajo en caliente",
+            "espacio confinado",
+            "electricidad"
+        ]
 
-        for r in requisitos_base:
-            if not any(r in a[0].lower() for a in archivos):
-                faltantes.append(r)
+        if actividad_sel.lower() in actividades_criticas:
 
-        if faltantes:
-            st.error(f"❌ Faltan: {', '.join(faltantes)}")
+            requisitos_base = ["procedimiento", "permiso", "checklist", "emergencia"]
+            faltantes = []
+
+            for r in requisitos_base:
+                if not any(r in a[0].lower() for a in archivos):
+                    faltantes.append(r)
+
+            if faltantes:
+                st.error(f"❌ Faltan: {', '.join(faltantes)}")
+            else:
+                st.success("✔ Documentación completa")
+
         else:
-            st.success("✔ Completo")
+            if archivos:
+                st.success("✔ Tiene documentación")
+            else:
+                st.error("❌ Falta documentación")
 
     # =========================
     # 📊 REGISTROS
