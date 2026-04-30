@@ -252,9 +252,10 @@ alertas = []
 
 for root, _, files in os.walk(reg_dir):
     for f in files:
-        estado = evaluar_vencimiento(os.path.join(root, f), f)
-        if estado:
-            alertas.append(f"{estado} - {f}")
+        if f.endswith(".pdf"):
+            estado = evaluar_vencimiento(os.path.join(root, f), f)
+            if estado:
+                alertas.append(f"{estado} - {f}")
 
 if alertas:
     for a in alertas:
@@ -263,24 +264,30 @@ else:
     st.success("✔ Sin alertas")
 
 # =========================
-# 🟢 SEMÁFORO SST CORREGIDO
+# 🟢 SEMÁFORO SST DEFINITIVO
 # =========================
 st.markdown("---")
 st.markdown("## 🟢 Estado general")
 
 for tipo in tipos:
 
+    # BASE
     carpeta_base = os.path.join(base_dir, tipo)
     base_files = []
     if os.path.exists(carpeta_base):
-        for _, _, files in os.walk(carpeta_base):
-            base_files += files
+        for root, _, files in os.walk(carpeta_base):
+            for f in files:
+                if f.endswith(".pdf"):
+                    base_files.append(f)
 
+    # REGISTROS
     carpeta_reg = os.path.join(reg_dir, tipo)
     reg_files = []
     if os.path.exists(carpeta_reg):
-        for _, _, files in os.walk(carpeta_reg):
-            reg_files += files
+        for root, _, files in os.walk(carpeta_reg):
+            for f in files:
+                if f.endswith(".pdf"):
+                    reg_files.append(f)
 
     estado = "🟢"
     detalle = "Completo"
@@ -293,25 +300,27 @@ for tipo in tipos:
         req_reg = ["permiso","ats","checklist"]
         falt_reg = [r for r in req_reg if not any(r in f.lower() for f in reg_files)]
 
-        # 🔴 CRÍTICO
-        if not base_files or not reg_files:
+        if not base_files and not reg_files:
             estado = "🔴"
-            detalle = "Sin documentación o registros"
+            detalle = "Sin base ni registros"
 
-        # 🟡 PARCIAL
         elif falt_base or falt_reg:
             estado = "🟡"
             detalle = f"Base: {falt_base} / Reg: {falt_reg}"
 
-        # 🟢 COMPLETO
         else:
             estado = "🟢"
             detalle = "Completo"
 
     else:
-        if not reg_files:
+        if not base_files and not reg_files:
             estado = "🔴"
-            detalle = "Sin registros"
+            detalle = "Sin documentación"
+
+        elif not base_files or not reg_files:
+            estado = "🟡"
+            detalle = "Falta base o registros"
+
         else:
             estado = "🟢"
             detalle = "OK"
