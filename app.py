@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+from datetime import datetime
 import matplotlib.pyplot as plt
 
 # =========================
@@ -11,7 +12,7 @@ st.image("banner.png", use_container_width=True)
 st.title("🦺 Sistema de Seguridad e Higiene")
 
 # =========================
-# NORMALIZAR (MEJORADO)
+# NORMALIZAR
 # =========================
 def normalizar(txt):
     return txt.lower().replace("_"," ").replace("-"," ").strip()
@@ -64,7 +65,7 @@ else:
     st.warning("⚠️ No hay documentación base")
 
 # =========================
-# CONTROL BASE
+# CONTROL BASE (CRÍTICOS)
 # =========================
 st.markdown("### 📋 Control documentación base")
 
@@ -84,16 +85,10 @@ if normalizar(tipo_sel) in criticos:
         }
 
         faltantes = []
-        presentes = []
 
         for nombre, clave in req_base.items():
-            if any(clave in normalizar(f[0]) for f in base_files):
-                presentes.append(nombre)
-            else:
+            if not any(clave in f[0].lower() for f in base_files):
                 faltantes.append(nombre)
-
-        if presentes:
-            st.info("✔ Presentes: " + ", ".join(presentes))
 
         if faltantes:
             st.error("❌ Faltan: " + ", ".join(faltantes))
@@ -114,9 +109,6 @@ if os.path.exists(ruta_reg):
             if f.endswith(".pdf"):
                 reg_files.append((f, os.path.join(root, f)))
 
-# 🔥 ORDENAR POR FECHA
-reg_files.sort(key=lambda x: os.path.getmtime(x[1]), reverse=True)
-
 if reg_files:
     for nombre, ruta in reg_files:
         with open(ruta, "rb") as f:
@@ -125,7 +117,7 @@ else:
     st.warning("⚠️ No hay registros")
 
 # =========================
-# CONTROL REGISTROS
+# CONTROL REGISTROS (CRÍTICOS)
 # =========================
 st.markdown("### 📋 Control registros")
 
@@ -142,16 +134,10 @@ if normalizar(tipo_sel) in criticos:
         }
 
         faltantes = []
-        presentes = []
 
         for nombre, clave in req_reg.items():
-            if any(clave in normalizar(f[0]) for f in reg_files):
-                presentes.append(nombre)
-            else:
+            if not any(clave in f[0].lower() for f in reg_files):
                 faltantes.append(nombre)
-
-        if presentes:
-            st.info("✔ Presentes: " + ", ".join(presentes))
 
         if faltantes:
             st.error("❌ Faltan: " + ", ".join(faltantes))
@@ -189,8 +175,8 @@ for tipo in tipos:
         req_base = ["procedimiento","permiso","checklist","emergencia","ats"]
         req_reg = ["permiso","ats","checklist","capacitacion"]
 
-        falt_base = [r for r in req_base if not any(r in normalizar(f) for f in base_files)]
-        falt_reg = [r for r in req_reg if not any(r in normalizar(f) for f in reg_files)]
+        falt_base = [r for r in req_base if not any(r in f.lower() for f in base_files)]
+        falt_reg = [r for r in req_reg if not any(r in f.lower() for f in reg_files)]
 
         if not base_files and not reg_files:
             critico += 1
@@ -215,7 +201,7 @@ c3.metric("🟡 Parcial", parcial)
 c4.metric("🔴 Crítico", critico)
 
 # =========================
-# TORTA
+# GRÁFICO TORTA
 # =========================
 fig, ax = plt.subplots()
 ax.pie(
