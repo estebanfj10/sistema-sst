@@ -35,7 +35,6 @@ def subir_a_github(ruta, nombre, contenido):
     r = requests.put(url, json=data, headers=headers)
     return r.status_code in [200, 201]
 
-
 def obtener_subtipos_github(tipo):
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
@@ -54,7 +53,6 @@ def obtener_subtipos_github(tipo):
         pass
 
     return []
-
 
 def obtener_tipos_github():
     token = st.secrets.get("GITHUB_TOKEN")
@@ -101,7 +99,6 @@ def obtener_registros_github(tipo):
                         recorrer(item["path"])
 
                     elif item["type"] == "file" and item["name"].endswith(".pdf"):
-
                         carpeta = item["path"].split("/")[-2]
 
                         resultados.append({
@@ -177,7 +174,7 @@ st.markdown("## 🔎 Consulta")
 tipo_sel = st.selectbox("Seleccionar tipo", tipos)
 
 # =========================
-# 📄 DOCUMENTACIÓN BASE
+# 📄 BASE
 # =========================
 st.markdown("### 📄 Documentación base")
 
@@ -196,55 +193,7 @@ else:
     for nombre, ruta in archivos_base:
         st.write(f"📄 {nombre}")
         with open(ruta, "rb") as file:
-            st.download_button(
-                f"📥 Descargar {nombre}",
-                data=file,
-                file_name=nombre,
-                key=f"base_{nombre}"
-            )
-
-# =========================
-# 📋 CONTROL BASE
-# =========================
-st.markdown("### 📋 Control documentación base")
-
-criticos = [
-    "altura","excavacion","izaje",
-    "trabajo en caliente","espacio confinado","electricidad"
-]
-
-if tipo_sel in criticos:
-
-    requisitos_base = {
-        "Procedimiento": "procedimiento",
-        "Permiso": "permiso",
-        "ATS": "ats",
-        "Checklist": "checklist",
-        "Emergencia": "emergencia"
-    }
-
-    faltantes_base = []
-    presentes_base = []
-
-    for nombre, clave in requisitos_base.items():
-        if any(clave in normalizar(a[0]) for a in archivos_base):
-            presentes_base.append(nombre)
-        else:
-            faltantes_base.append(nombre)
-
-    if presentes_base:
-        st.info("✔ Base presente: " + ", ".join(presentes_base))
-
-    if faltantes_base:
-        st.error("❌ Base faltante: " + ", ".join(faltantes_base))
-    else:
-        st.success("✔ Documentación base completa")
-
-else:
-    if archivos_base:
-        st.success("✔ Tiene documentación base")
-    else:
-        st.error("❌ Sin documentación base")
+            st.download_button(f"📥 Descargar {nombre}", file, nombre)
 
 # =========================
 # 📊 REGISTROS
@@ -255,7 +204,6 @@ archivos_reg = []
 reg_github = obtener_registros_github(tipo_sel)
 
 if reg_github:
-
     for item in reg_github:
         nombre = item["nombre"]
         subtipo = item["subtipo"]
@@ -269,51 +217,50 @@ if reg_github:
             r = requests.get(url)
             if r.status_code == 200:
                 st.download_button(
-                    label=f"📥 Descargar {nombre}",
-                    data=r.content,
-                    file_name=nombre,
-                    key=f"github_{subtipo}_{nombre}"
+                    f"📥 Descargar {nombre}",
+                    r.content,
+                    nombre,
+                    key=f"{nombre}"
                 )
         except:
             st.error(f"Error al cargar {nombre}")
-
 else:
     st.warning("⚠️ No hay registros")
 
 # =========================
-# 📋 CONTROL REGISTROS
+# 🚨 SEMÁFORO (NUEVO)
 # =========================
-st.markdown("### 📋 Control registros")
+st.markdown("## 🚨 Estado general SST")
 
-if tipo_sel in criticos:
+def evaluar_estado(tipo, base, reg):
 
-    requisitos = {
-        "Procedimiento": "procedimiento",
-        "Permiso": "permiso",
-        "ATS": "ats",
-        "Checklist": "checklist",
-        "Capacitación": "capacitacion"
-    }
+    criticos = [
+        "altura","excavacion","izaje",
+        "trabajo en caliente","espacio confinado","electricidad"
+    ]
 
-    faltantes = []
-    presentes = []
+    if tipo not in criticos:
+        return "ℹ️ NO CRÍTICO"
 
-    for nombre, clave in requisitos.items():
-        if any(clave in normalizar(a[0]) for a in archivos_reg):
-            presentes.append(nombre)
-        else:
-            faltantes.append(nombre)
+    req_base = ["procedimiento","permiso","ats","checklist","emergencia"]
+    req_reg = ["permiso","ats","checklist","capacitacion"]
 
-    if presentes:
-        st.info("✔ Presentes: " + ", ".join(presentes))
+    base_ok = all(any(r in normalizar(a[0]) for a in base) for r in req_base)
+    reg_ok = all(any(r in normalizar(a[0]) for a in reg) for r in req_reg)
 
-    if faltantes:
-        st.error("❌ Faltan: " + ", ".join(faltantes))
-    else:
-        st.success("✔ Registros completos")
+    if base_ok and reg_ok:
+        return "🟢 COMPLETO"
+    if base_ok or reg_ok:
+        return "🟡 PARCIAL"
+    return "🔴 CRÍTICO"
 
+estado = evaluar_estado(tipo_sel, archivos_base, archivos_reg)
+
+if "🟢" in estado:
+    st.success(estado)
+elif "🟡" in estado:
+    st.warning(estado)
+elif "🔴" in estado:
+    st.error(estado)
 else:
-    if archivos_reg:
-        st.success("✔ Tiene registros")
-    else:
-        st.error("❌ Sin registros")
+    st.info(estado)
