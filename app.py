@@ -11,7 +11,7 @@ st.set_page_config(page_title="Sistema SST", page_icon="🦺", layout="wide")
 st.title("🦺 Sistema de Seguridad e Higiene")
 
 # =========================
-# GITHUB
+# GITHUB (opcional en local)
 # =========================
 def subir_a_github(ruta, nombre, contenido):
     token = st.secrets.get("GITHUB_TOKEN", None)
@@ -244,7 +244,7 @@ else:
         st.error("❌ Sin registros")
 
 # =========================
-# ALERTAS
+# 🚨 ALERTAS
 # =========================
 st.markdown("## 🚨 Alertas")
 
@@ -263,7 +263,7 @@ else:
     st.success("✔ Sin alertas")
 
 # =========================
-# 🟢 SEMÁFORO SST
+# 🟢 SEMÁFORO SST CORREGIDO
 # =========================
 st.markdown("---")
 st.markdown("## 🟢 Estado general")
@@ -293,17 +293,27 @@ for tipo in tipos:
         req_reg = ["permiso","ats","checklist"]
         falt_reg = [r for r in req_reg if not any(r in f.lower() for f in reg_files)]
 
-        if falt_base or falt_reg:
-            estado = "🟡"
-            detalle = f"Base: {falt_base} / Reg: {falt_reg}"
-
+        # 🔴 CRÍTICO
         if not base_files or not reg_files:
             estado = "🔴"
             detalle = "Sin documentación o registros"
+
+        # 🟡 PARCIAL
+        elif falt_base or falt_reg:
+            estado = "🟡"
+            detalle = f"Base: {falt_base} / Reg: {falt_reg}"
+
+        # 🟢 COMPLETO
+        else:
+            estado = "🟢"
+            detalle = "Completo"
 
     else:
         if not reg_files:
             estado = "🔴"
             detalle = "Sin registros"
+        else:
+            estado = "🟢"
+            detalle = "OK"
 
     st.write(f"{estado} {tipo} → {detalle}")
