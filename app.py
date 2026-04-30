@@ -3,15 +3,19 @@ import os
 import requests
 import base64
 from datetime import datetime, timedelta
+from io import BytesIO
+
+# PDF
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
 
 # =========================
 # CONFIG
 # =========================
 st.set_page_config(page_title="Sistema SST", page_icon="🦺", layout="wide")
 
-# 🔥 BANNER
 st.image("banner.png", use_container_width=True)
-
 st.title("🦺 Sistema de Seguridad e Higiene")
 
 # =========================
@@ -74,6 +78,90 @@ def obtener_tipos_github():
     return []
 
 # =========================
+# PDF PROFESIONAL
+# =========================
+def generar_pdf(tipos, base_dir, reg_dir, criticos):
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer)
+    styles = getSampleStyleSheet()
+
+    elementos = []
+
+    elementos.append(Paragraph("REPORTE SISTEMA SST", styles["Title"]))
+    elementos.append(Spacer(1, 10))
+    elementos.append(Paragraph(f"Fecha: {datetime.now().strftime('%d/%m/%Y')}", styles["Normal"]))
+    elementos.append(Spacer(1, 20))
+
+    data = [["Tipo", "Estado"]]
+
+    ok = parcial = critico_count = 0
+
+    for tipo in tipos:
+
+        base_files = []
+        reg_files = []
+
+        carpeta_base = os.path.join(base_dir, tipo)
+        if os.path.exists(carpeta_base):
+            for _, _, files in os.walk(carpeta_base):
+                base_files += [f for f in files if f.endswith(".pdf")]
+
+        carpeta_reg = os.path.join(reg_dir, tipo)
+        if os.path.exists(carpeta_reg):
+            for _, _, files in os.walk(carpeta_reg):
+                reg_files += [f for f in files if f.endswith(".pdf")]
+
+        estado = "OK"
+
+        if tipo in criticos:
+            if not base_files and not reg_files:
+                estado = "CRITICO"
+            elif not base_files or not reg_files:
+                estado = "PARCIAL"
+        else:
+            if not base_files and not reg_files:
+                estado = "CRITICO"
+            elif not base_files or not reg_files:
+                estado = "PARCIAL"
+
+        if estado == "OK":
+            ok += 1
+        elif estado == "PARCIAL":
+            parcial += 1
+        else:
+            critico_count += 1
+
+        data.append([tipo.upper(), estado])
+
+    elementos.append(Paragraph(f"OK: {ok} | Parcial: {parcial} | Crítico: {critico_count}", styles["Heading2"]))
+    elementos.append(Spacer(1, 15))
+
+    tabla = Table(data)
+    tabla.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("GRID", (0, 0), (-1, -1), 1, colors.black),
+    ]))
+
+    elementos.append(tabla)
+    elementos.append(Spacer(1, 20))
+
+    if critico_count > 0:
+        conclusion = "Sistema con tareas críticas"
+    elif parcial > 0:
+        conclusion = "Sistema con tareas incompletas"
+    else:
+        conclusion = "Sistema en condiciones óptimas"
+
+    elementos.append(Paragraph(f"Conclusión: {conclusion}", styles["Heading2"]))
+
+    doc.build(elementos)
+    buffer.seek(0)
+
+    return buffer
+
+# =========================
 # BASE
 # =========================
 base_dir = "documentos"
@@ -120,45 +208,6 @@ if archivo:
         subir_a_github(f"documentos/registros/{tipo}/{subtipo}", archivo.name, archivo.getbuffer())
 
         st.success("✔ Guardado")
-
-# =========================
-# CONSULTA
-# =========================
-st.markdown("## 🔎 Consulta")
-
-tipo_sel = st.selectbox("Seleccionar tipo", tipos)
-
-# BASE
-st.markdown("### 📄 Documentación base")
-
-carpeta_base = os.path.join(base_dir, tipo_sel)
-archivos_base = []
-
-if os.path.exists(carpeta_base):
-    for root, _, files in os.walk(carpeta_base):
-        archivos_base += [(f, os.path.join(root, f)) for f in files if f.endswith(".pdf")]
-
-if not archivos_base:
-    st.warning("⚠️ No hay documentación base")
-else:
-    for nombre, ruta in archivos_base:
-        st.download_button(f"📥 {nombre}", open(ruta, "rb"), file_name=nombre)
-
-# REGISTROS
-st.markdown("### 📊 Registros")
-
-carpeta_reg = os.path.join(reg_dir, tipo_sel)
-archivos_reg = []
-
-if os.path.exists(carpeta_reg):
-    for root, _, files in os.walk(carpeta_reg):
-        archivos_reg += [(f, os.path.join(root, f)) for f in files if f.endswith(".pdf")]
-
-if not archivos_reg:
-    st.warning("⚠️ No hay registros")
-else:
-    for nombre, ruta in archivos_reg:
-        st.download_button(f"📥 {nombre}", open(ruta, "rb"), file_name=nombre)
 
 # =========================
 # DASHBOARD PRO
@@ -213,14 +262,18 @@ c2.markdown(f"<div style='background:#2ecc71;color:white;padding:15px;border-rad
 c3.markdown(f"<div style='background:#f1c40f;color:black;padding:15px;border-radius:10px;text-align:center'><h3>Parcial</h3><h2>{parcial}</h2></div>", unsafe_allow_html=True)
 c4.markdown(f"<div style='background:#e74c3c;color:white;padding:15px;border-radius:10px;text-align:center'><h3>Crítico</h3><h2>{critico}</h2></div>", unsafe_allow_html=True)
 
-# Gráfico
-st.markdown("### 📊 Distribución")
 st.bar_chart({"OK": ok, "Parcial": parcial, "Crítico": critico})
 
-# Estado general
-if critico > 0:
-    st.error("⚠️ Hay tareas críticas")
-elif parcial > 0:
-    st.warning("⚠️ Hay tareas incompletas")
-else:
-    st.success("✔ Sistema en condiciones óptimas")
+# =========================
+# PDF BOTÓN
+# =========================
+st.markdown("### 📄 Reporte SST")
+
+pdf = generar_pdf(tipos, base_dir, reg_dir, criticos)
+
+st.download_button(
+    "📥 Descargar reporte PDF",
+    data=pdf,
+    file_name="reporte_sst.pdf",
+    mime="application/pdf"
+)
