@@ -70,7 +70,7 @@ def obtener_tipos_github():
     return []
 
 # =========================
-# 🔥 NUEVO: LECTURA GITHUB REGISTROS
+# 🔥 LECTURA GITHUB REGISTROS
 # =========================
 def obtener_registros_github(tipo):
 
@@ -180,9 +180,7 @@ if archivo:
         ruta = os.path.join(reg_dir, tipo, subtipo)
         os.makedirs(ruta, exist_ok=True)
 
-        path = os.path.join(ruta, archivo.name)
-
-        with open(path, "wb") as f:
+        with open(os.path.join(ruta, archivo.name), "wb") as f:
             f.write(archivo.getbuffer())
 
         subir_a_github(
@@ -200,47 +198,41 @@ st.markdown("## 🔎 Consulta")
 
 tipo_sel = st.selectbox("Seleccionar tipo", tipos)
 
-# =========================
-# 📊 REGISTROS (CORREGIDO)
-# =========================
 st.markdown("### 📊 Registros")
 
 archivos_reg = []
 
-# 🔥 GITHUB
 reg_github = obtener_registros_github(tipo_sel)
 
 if reg_github:
 
     for item in reg_github:
-        archivos_reg.append((item["nombre"], item["subtipo"]))
 
-        st.write(f"📁 {item['subtipo']} → {item['nombre']}")
-        st.markdown(f"[📥 Descargar]({item['url']})")
+        nombre = item["nombre"]
+        subtipo = item["subtipo"]
+        url = item["url"]
 
-# 🔹 LOCAL (fallback)
+        archivos_reg.append((nombre, subtipo))
+
+        st.write(f"📁 {subtipo} → {nombre}")
+
+        try:
+            r = requests.get(url)
+
+            if r.status_code == 200:
+                st.download_button(
+                    label=f"📥 Descargar {nombre}",
+                    data=r.content,
+                    file_name=nombre,
+                    key=f"github_{subtipo}_{nombre}"
+                )
+            else:
+                st.warning(f"No se pudo descargar {nombre}")
+
+        except:
+            st.error(f"Error al cargar {nombre}")
+
 else:
-
-    carpeta_reg = os.path.join(reg_dir, tipo_sel)
-
-    if os.path.exists(carpeta_reg):
-        for root, _, files in os.walk(carpeta_reg):
-            for f in files:
-                if f.endswith(".pdf"):
-                    subtipo = os.path.basename(root)
-                    archivos_reg.append((f, subtipo))
-
-                    st.write(f"📁 {subtipo} → {f}")
-
-                    with open(os.path.join(root, f), "rb") as file:
-                        st.download_button(
-                            f"📥 Descargar {f}",
-                            data=file,
-                            file_name=f,
-                            key=f"reg_{subtipo}_{f}"
-                        )
-
-if not archivos_reg:
     st.warning("⚠️ No hay registros")
 
 # =========================
