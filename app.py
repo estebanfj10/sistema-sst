@@ -216,7 +216,7 @@ else:
     st.warning("⚠️ Sin base")
 
 # =========================
-# 📊 REGISTROS
+# 📊 REGISTROS (MEJORADO)
 # =========================
 st.markdown("### 📊 Registros")
 
@@ -224,12 +224,47 @@ archivos_reg = []
 reg = obtener_registros_github(tipo_sel)
 
 if reg:
-    for item in reg:
-        archivos_reg.append((item["nombre"], item["subtipo"]))
 
-        r = requests.get(item["url"])
-        if r.status_code == 200:
-            st.download_button(item["nombre"], r.content, item["nombre"])
+    carpetas = {}
+
+    for item in reg:
+        carpetas.setdefault(item["subtipo"], []).append(item)
+
+    for carpeta, archivos in carpetas.items():
+
+        st.markdown(f"### 📁 {carpeta}")
+
+        for item in archivos:
+
+            nombre = item["nombre"]
+            url = item["url"]
+
+            archivos_reg.append((nombre, carpeta))
+
+            icono = "📄"
+            if "permiso" in normalizar(nombre):
+                icono = "📝"
+            elif "ats" in normalizar(nombre):
+                icono = "📋"
+            elif "checklist" in normalizar(nombre):
+                icono = "✅"
+            elif "capacitacion" in normalizar(nombre):
+                icono = "🎓"
+
+            st.write(f"{icono} {nombre}")
+
+            try:
+                r = requests.get(url)
+                if r.status_code == 200:
+                    st.download_button(
+                        label="📥 Descargar",
+                        data=r.content,
+                        file_name=nombre,
+                        key=f"{carpeta}_{nombre}"
+                    )
+            except:
+                st.error(f"Error al cargar {nombre}")
+
 else:
     st.warning("⚠️ Sin registros")
 
@@ -237,8 +272,6 @@ else:
 # 📋 CONTROL DETALLADO
 # =========================
 st.markdown("### 📋 Control documentación base")
-
-criticos = ["altura","excavacion","izaje","trabajo en caliente","espacio confinado","electricidad"]
 
 base_completa = False
 
@@ -256,7 +289,6 @@ if tipo_sel in criticos:
         st.success("✔ Base completa")
         base_completa = True
 
-# REGISTROS
 st.markdown("### 📋 Control registros")
 
 reg_completo = False
