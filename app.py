@@ -31,7 +31,7 @@ def subir_a_github(ruta, nombre, contenido):
     headers = {"Authorization": f"token {token}"}
 
     requests.put(url, json={
-        "message": nombre,
+        "message": f"Subida {nombre}",
         "content": contenido_base64
     }, headers=headers)
 
@@ -54,8 +54,26 @@ def obtener_tipos_github():
 
     return []
 
-def obtener_registros_github(tipo):
+def obtener_subtipos_github(tipo):
+    token = st.secrets.get("GITHUB_TOKEN")
+    repo = st.secrets.get("GITHUB_REPO")
 
+    if not token or not repo:
+        return []
+
+    url = f"https://api.github.com/repos/{repo}/contents/documentos/registros/{tipo}"
+    headers = {"Authorization": f"token {token}"}
+
+    try:
+        r = requests.get(url, headers=headers)
+        if r.status_code == 200:
+            return [i["name"] for i in r.json() if i["type"] == "dir"]
+    except:
+        pass
+
+    return []
+
+def obtener_registros_github(tipo):
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
 
@@ -108,7 +126,37 @@ tipos += obtener_tipos_github()
 tipos = sorted(list(set(tipos)))
 
 # =========================
-# CONSULTA
+# 📤 CARGA
+# =========================
+st.markdown("## 📤 Cargar documento")
+
+archivo = st.file_uploader("Seleccionar PDF", type=["pdf"])
+
+if archivo:
+    tipo = st.selectbox("Tipo", tipos)
+    subtipos = obtener_subtipos_github(tipo)
+    if not subtipos:
+        subtipos = ["otros"]
+
+    subtipo = st.selectbox("Subtipo", subtipos)
+
+    if st.button("Guardar archivo"):
+        ruta = os.path.join(reg_dir, tipo, subtipo)
+        os.makedirs(ruta, exist_ok=True)
+
+        with open(os.path.join(ruta, archivo.name), "wb") as f:
+            f.write(archivo.getbuffer())
+
+        subir_a_github(
+            f"documentos/registros/{tipo}/{subtipo}",
+            archivo.name,
+            archivo.getbuffer()
+        )
+
+        st.success("✔ Archivo guardado")
+
+# =========================
+# 🔎 CONSULTA
 # =========================
 st.markdown("## 🔎 Consulta")
 
@@ -132,7 +180,7 @@ if archivos_base:
     for nombre, ruta in archivos_base:
         st.write(f"📄 {nombre}")
         with open(ruta, "rb") as file:
-            st.download_button("Descargar", file, nombre)
+            st.download_button("📥 Descargar", file, nombre)
 else:
     st.warning("⚠️ Sin documentación base")
 
@@ -146,7 +194,6 @@ criticos = ["altura","excavacion","izaje","trabajo en caliente","espacio confina
 base_completa = False
 
 if tipo_sel in criticos:
-
     requisitos_base = ["procedimiento","permiso","ats","checklist","emergencia"]
 
     faltantes = [r for r in requisitos_base if not any(r in normalizar(a[0]) for a in archivos_base)]
@@ -180,7 +227,6 @@ st.markdown("### 📋 Control registros")
 reg_completo = False
 
 if tipo_sel in criticos:
-
     requisitos = ["permiso","ats","checklist","capacitacion"]
 
     faltantes = [r for r in requisitos if not any(r in normalizar(a[0]) for a in archivos_reg)]
@@ -198,7 +244,6 @@ st.markdown("## 🚨 Estado general SST")
 
 if tipo_sel not in criticos:
     st.info("ℹ️ No crítico")
-
 else:
     if base_completa and reg_completo:
         st.success("🟢 COMPLETO")
@@ -206,4 +251,3 @@ else:
         st.warning("🟡 PARCIAL")
     else:
         st.error("🔴 CRÍTICO")
-        
