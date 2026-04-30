@@ -191,7 +191,7 @@ else:
     st.warning("⚠️ Sin documentación base")
 
 # =========================
-# 📊 REGISTROS (CON DESCARGA)
+# 📊 REGISTROS (MEJORADO)
 # =========================
 st.markdown("### 📊 Registros")
 
@@ -199,32 +199,48 @@ archivos_reg = []
 reg = obtener_registros_github(tipo_sel)
 
 if reg:
+
+    carpetas = {}
+
     for item in reg:
-
-        nombre = item["nombre"]
         subtipo = item["subtipo"]
-        url = item["url"]
+        carpetas.setdefault(subtipo, []).append(item)
 
-        archivos_reg.append((nombre, subtipo))
+    for carpeta, archivos in carpetas.items():
 
-        st.write(f"📁 {subtipo} → {nombre}")
+        st.markdown(f"### 📁 {carpeta}")
 
-        # 🔽 DESCARGA REAL
-        try:
-            r = requests.get(url)
+        for item in archivos:
 
-            if r.status_code == 200:
-                st.download_button(
-                    label=f"📥 Descargar {nombre}",
-                    data=r.content,
-                    file_name=nombre,
-                    key=f"reg_{subtipo}_{nombre}"
-                )
-            else:
-                st.warning(f"No se pudo descargar {nombre}")
+            nombre = item["nombre"]
+            url = item["url"]
 
-        except:
-            st.error(f"Error al cargar {nombre}")
+            archivos_reg.append((nombre, carpeta))
+
+            icono = "📄"
+            if "permiso" in normalizar(nombre):
+                icono = "📝"
+            elif "ats" in normalizar(nombre):
+                icono = "📋"
+            elif "checklist" in normalizar(nombre):
+                icono = "✅"
+            elif "capacitacion" in normalizar(nombre):
+                icono = "🎓"
+
+            st.write(f"{icono} {nombre}")
+
+            try:
+                r = requests.get(url)
+                if r.status_code == 200:
+                    st.download_button(
+                        label="📥 Descargar",
+                        data=r.content,
+                        file_name=nombre,
+                        key=f"reg_{carpeta}_{nombre}"
+                    )
+            except:
+                st.error(f"Error al cargar {nombre}")
+
 else:
     st.warning("⚠️ Sin registros")
 
