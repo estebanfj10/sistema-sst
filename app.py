@@ -27,20 +27,27 @@ st.title("🦺 Sistema de Seguridad e Higiene")
 def subir_a_github(ruta, nombre, contenido):
     token = st.secrets.get("GITHUB_TOKEN", None)
     repo = st.secrets.get("GITHUB_REPO", None)
+
     if not token or not repo:
         return False
 
     url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre}"
     contenido_base64 = base64.b64encode(contenido).decode()
+
     headers = {"Authorization": f"token {token}"}
 
     r = requests.put(url, json={"message": nombre, "content": contenido_base64}, headers=headers)
+
     if r.status_code not in [200, 201]:
         st.warning("⚠️ Error al subir a GitHub")
 
+# =========================
+# FUNCIONES GITHUB
+# =========================
 def obtener_subtipos_github(tipo):
     token = st.secrets.get("GITHUB_TOKEN", None)
     repo = st.secrets.get("GITHUB_REPO", None)
+
     if not token or not repo:
         return []
 
@@ -56,6 +63,7 @@ def obtener_subtipos_github(tipo):
 def obtener_tipos_github():
     token = st.secrets.get("GITHUB_TOKEN", None)
     repo = st.secrets.get("GITHUB_REPO", None)
+
     if not token or not repo:
         return []
 
@@ -72,9 +80,11 @@ def obtener_tipos_github():
 # PDF
 # =========================
 def generar_pdf(tipos, base_dir, reg_dir, criticos):
+
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer)
     styles = getSampleStyleSheet()
+
     elementos = []
 
     if os.path.exists("banner.png"):
@@ -131,6 +141,7 @@ def generar_pdf(tipos, base_dir, reg_dir, criticos):
         colores_filas.append(color)
 
     tabla = Table(data)
+
     estilo = [("GRID", (0,0), (-1,-1), 1, colors.black)]
 
     for i, color in enumerate(colores_filas, start=1):
@@ -140,6 +151,7 @@ def generar_pdf(tipos, base_dir, reg_dir, criticos):
 
     elementos.append(tabla)
     doc.build(elementos)
+
     buffer.seek(0)
     return buffer
 
@@ -156,8 +168,10 @@ os.makedirs(reg_dir, exist_ok=True)
 # TIPOS
 # =========================
 tipos = []
+
 if os.path.exists(reg_dir):
     tipos += [d for d in os.listdir(reg_dir) if os.path.isdir(os.path.join(reg_dir, d))]
+
 tipos += obtener_tipos_github()
 tipos = sorted(list(set(tipos)))
 
@@ -198,6 +212,7 @@ tipo_sel = st.selectbox("Seleccionar tipo", tipos)
 st.markdown("### 📄 Documentación base")
 
 base_files = []
+
 if os.path.exists(os.path.join(base_dir, tipo_sel)):
     for root, _, files in os.walk(os.path.join(base_dir, tipo_sel)):
         for f in files:
@@ -217,18 +232,23 @@ st.markdown("### 📋 Control documentación base")
 criticos = ["altura","excavacion","izaje","trabajo en caliente","espacio confinado","electricidad"]
 
 if tipo_sel in criticos:
-    req = ["procedimiento","permiso","checklist","emergencia","analisis"]
-    falt = [r for r in req if not any(r in f[0].lower() for f in base_files)]
 
-    if falt:
-        st.error(f"❌ Faltan: {', '.join(falt)}")
+    if not base_files:
+        st.error("❌ No hay documentación base")
     else:
-        st.success("✔ Completo")
+        req = ["procedimiento","permiso","checklist","emergencia","ats"]
+        falt = [r for r in req if not any(r in f[0].lower() for f in base_files)]
+
+        if falt:
+            st.error(f"❌ Faltan: {', '.join(falt)}")
+        else:
+            st.success("✔ Completo")
 
 # REGISTROS
 st.markdown("### 📊 Registros")
 
 reg_files = []
+
 if os.path.exists(os.path.join(reg_dir, tipo_sel)):
     for root, _, files in os.walk(os.path.join(reg_dir, tipo_sel)):
         for f in files:
@@ -246,13 +266,17 @@ else:
 st.markdown("### 📋 Control registros")
 
 if tipo_sel in criticos:
-    req = ["permiso","ats","checklist","registro"]
-    falt = [r for r in req if not any(r in f[0].lower() for f in reg_files)]
 
-    if falt:
-        st.error(f"❌ Faltan: {', '.join(falt)}")
+    if not reg_files:
+        st.error("❌ No hay registros cargados")
     else:
-        st.success("✔ Registros completos")
+        req = ["permiso","ats","checklist"]
+        falt = [r for r in req if not any(r in f[0].lower() for f in reg_files)]
+
+        if falt:
+            st.error(f"❌ Faltan: {', '.join(falt)}")
+        else:
+            st.success("✔ Registros completos")
 
 # =========================
 # DASHBOARD
@@ -291,10 +315,12 @@ c4.metric("🔴 Crítico", critico)
 
 # TORTA
 fig, ax = plt.subplots()
-ax.pie([ok, parcial, critico],
-       labels=["OK","Parcial","Crítico"],
-       autopct="%1.0f%%",
-       colors=["#2ecc71","#f1c40f","#e74c3c"])
+ax.pie(
+    [ok, parcial, critico],
+    labels=["OK","Parcial","Crítico"],
+    autopct="%1.0f%%",
+    colors=["#2ecc71","#f1c40f","#e74c3c"]
+)
 ax.axis("equal")
 
 st.pyplot(fig)
