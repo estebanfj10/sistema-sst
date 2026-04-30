@@ -2,11 +2,11 @@ import streamlit as st
 import os
 import requests
 import base64
-from datetime import datetime, timedelta
+from datetime import datetime
 from io import BytesIO
 
 # PDF
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 
@@ -57,7 +57,6 @@ def obtener_subtipos_github(tipo):
 
     return []
 
-
 def obtener_tipos_github():
     token = st.secrets.get("GITHUB_TOKEN", None)
     repo = st.secrets.get("GITHUB_REPO", None)
@@ -88,6 +87,11 @@ def generar_pdf(tipos, base_dir, reg_dir, criticos):
 
     elementos = []
 
+    # Banner
+    if os.path.exists("banner.png"):
+        elementos.append(Image("banner.png", width=500, height=120))
+        elementos.append(Spacer(1, 10))
+
     elementos.append(Paragraph("REPORTE SISTEMA SST", styles["Title"]))
     elementos.append(Spacer(1, 10))
     elementos.append(Paragraph(f"Fecha: {datetime.now().strftime('%d/%m/%Y')}", styles["Normal"]))
@@ -96,6 +100,7 @@ def generar_pdf(tipos, base_dir, reg_dir, criticos):
     data = [["Tipo", "Estado"]]
 
     ok = parcial = critico_count = 0
+    colores_filas = []
 
     for tipo in tipos:
 
@@ -127,22 +132,33 @@ def generar_pdf(tipos, base_dir, reg_dir, criticos):
 
         if estado == "OK":
             ok += 1
+            color = colors.green
         elif estado == "PARCIAL":
             parcial += 1
+            color = colors.yellow
         else:
             critico_count += 1
+            color = colors.red
 
         data.append([tipo.upper(), estado])
+        colores_filas.append(color)
 
     elementos.append(Paragraph(f"OK: {ok} | Parcial: {parcial} | Crítico: {critico_count}", styles["Heading2"]))
     elementos.append(Spacer(1, 15))
 
     tabla = Table(data)
-    tabla.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+
+    estilo = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.darkblue),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("GRID", (0, 0), (-1, -1), 1, colors.black),
-    ]))
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+    ]
+
+    for i, color in enumerate(colores_filas, start=1):
+        estilo.append(("BACKGROUND", (1, i), (1, i), color))
+
+    tabla.setStyle(TableStyle(estilo))
 
     elementos.append(tabla)
     elementos.append(Spacer(1, 20))
@@ -154,7 +170,7 @@ def generar_pdf(tipos, base_dir, reg_dir, criticos):
     else:
         conclusion = "Sistema en condiciones óptimas"
 
-    elementos.append(Paragraph(f"Conclusión: {conclusion}", styles["Heading2"]))
+    elementos.append(Paragraph(conclusion, styles["Heading2"]))
 
     doc.build(elementos)
     buffer.seek(0)
@@ -210,7 +226,7 @@ if archivo:
         st.success("✔ Guardado")
 
 # =========================
-# DASHBOARD PRO
+# DASHBOARD
 # =========================
 st.markdown("---")
 st.markdown("## 📊 Dashboard SST")
@@ -265,7 +281,7 @@ c4.markdown(f"<div style='background:#e74c3c;color:white;padding:15px;border-rad
 st.bar_chart({"OK": ok, "Parcial": parcial, "Crítico": critico})
 
 # =========================
-# PDF BOTÓN
+# PDF
 # =========================
 st.markdown("### 📄 Reporte SST")
 
