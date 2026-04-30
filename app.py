@@ -218,7 +218,7 @@ else:
             )
 
 # =========================
-# 📋 CONTROL BASE CORREGIDO
+# 📋 CONTROL BASE REAL
 # =========================
 st.markdown("### 📋 Control documentación base")
 
@@ -228,10 +228,19 @@ criticos = [
 ]
 
 if tipo_sel in criticos:
-    if archivos_base:
-        st.success("✔ Documentación base disponible")
+
+    requisitos = ["procedimiento","permiso","checklist","emergencia"]
+    faltantes = []
+
+    for r in requisitos:
+        if not any(r in archivo[0].lower() for archivo in archivos_base):
+            faltantes.append(r)
+
+    if faltantes:
+        st.error(f"❌ Faltan: {', '.join(faltantes)}")
     else:
-        st.error("❌ Falta documentación base")
+        st.success("✔ Documentación completa")
+
 else:
     if archivos_base:
         st.success("✔ Tiene documentación")
@@ -244,6 +253,7 @@ else:
 st.markdown("### 📋 Control registros")
 
 if tipo_sel in criticos:
+
     requisitos = ["permiso","ats","checklist"]
     faltantes = [
         r for r in requisitos
@@ -254,6 +264,7 @@ if tipo_sel in criticos:
         st.error(f"❌ Faltan: {', '.join(faltantes)}")
     else:
         st.success("✔ Registros completos")
+
 else:
     if archivos_reg:
         st.success("✔ Tiene registros")
