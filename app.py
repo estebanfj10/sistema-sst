@@ -1,5 +1,7 @@
 import streamlit as st
 import os
+import requests
+import base64
 import matplotlib.pyplot as plt
 
 # PDF
@@ -24,10 +26,25 @@ def normalizar(txt):
     return txt.lower().replace("_"," ").replace("-"," ").strip()
 
 # =========================
+# GITHUB (OPCIONAL)
+# =========================
+def subir_a_github(ruta, nombre, contenido):
+    token = st.secrets.get("GITHUB_TOKEN", None)
+    repo = st.secrets.get("GITHUB_REPO", None)
+
+    if not token or not repo:
+        return False
+
+    url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre}"
+    contenido_base64 = base64.b64encode(contenido).decode()
+    headers = {"Authorization": f"token {token}"}
+
+    requests.put(url, json={"message": nombre, "content": contenido_base64}, headers=headers)
+
+# =========================
 # PDF
 # =========================
 def generar_pdf(tipos, base_dir, reg_dir, criticos):
-
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer)
     styles = getSampleStyleSheet()
@@ -46,7 +63,6 @@ def generar_pdf(tipos, base_dir, reg_dir, criticos):
     data = [["Tipo", "Estado"]]
 
     for tipo in tipos:
-
         base_files = []
         reg_files = []
 
@@ -61,7 +77,6 @@ def generar_pdf(tipos, base_dir, reg_dir, criticos):
         tipo_norm = normalizar(tipo)
 
         if tipo_norm in criticos:
-
             req_base = ["procedimiento","permiso","checklist","emergencia","ats"]
             req_reg = ["permiso","ats","checklist","capacitacion"]
 
@@ -74,7 +89,6 @@ def generar_pdf(tipos, base_dir, reg_dir, criticos):
                 estado = "PARCIAL"
             else:
                 estado = "OK"
-
         else:
             if not base_files and not reg_files:
                 estado = "CRITICO"
@@ -114,15 +128,36 @@ if not tipos:
     tipos = ["general"]
 
 # =========================
+# 📤 CARGA (AGREGADA)
+# =========================
+st.markdown("## 📤 Cargar documento")
+
+archivo = st.file_uploader("Seleccionar PDF", type=["pdf"])
+
+if archivo:
+    tipo = st.selectbox("Tipo", tipos)
+    subtipo = st.text_input("Subtipo (ej: permisos, ats, checklist)")
+
+    if st.button("Guardar archivo"):
+
+        ruta = os.path.join(reg_dir, tipo, subtipo or "otros")
+        os.makedirs(ruta, exist_ok=True)
+
+        with open(os.path.join(ruta, archivo.name), "wb") as f:
+            f.write(archivo.getbuffer())
+
+        subir_a_github(f"documentos/registros/{tipo}/{subtipo or 'otros'}", archivo.name, archivo.getbuffer())
+
+        st.success("✔ Archivo guardado")
+
+# =========================
 # CONSULTA
 # =========================
 st.markdown("## 🔎 Consulta")
 
 tipo_sel = st.selectbox("Seleccionar tipo", tipos)
 
-# =========================
 # BASE
-# =========================
 st.markdown("### 📄 Documentación base")
 
 base_files = []
@@ -141,46 +176,24 @@ if base_files:
 else:
     st.warning("⚠️ No hay documentación base")
 
-# =========================
 # CONTROL BASE
-# =========================
 st.markdown("### 📋 Control documentación base")
 
 criticos = ["altura","excavacion","izaje","trabajo en caliente","espacio confinado","electricidad"]
 
 if normalizar(tipo_sel) in criticos:
-
     if not base_files:
         st.error("❌ No hay documentación base")
     else:
-        req_base = {
-            "Procedimiento": "procedimiento",
-            "Permiso de trabajo": "permiso",
-            "Checklist": "checklist",
-            "Plan de emergencia": "emergencia",
-            "ATS": "ats"
-        }
+        req = ["procedimiento","permiso","checklist","emergencia","ats"]
+        falt = [r for r in req if not any(r in normalizar(f[0]) for f in base_files)]
 
-        faltantes = []
-        presentes = []
-
-        for nombre, clave in req_base.items():
-            if any(clave in normalizar(f[0]) for f in base_files):
-                presentes.append(nombre)
-            else:
-                faltantes.append(nombre)
-
-        if presentes:
-            st.info("✔ Presentes: " + ", ".join(presentes))
-
-        if faltantes:
-            st.error("❌ Faltan: " + ", ".join(faltantes))
+        if falt:
+            st.error("❌ Faltan: " + ", ".join(falt))
         else:
-            st.success("✔ Documentación base completa")
+            st.success("✔ Completo")
 
-# =========================
 # REGISTROS
-# =========================
 st.markdown("### 📊 Registros")
 
 reg_files = []
@@ -201,37 +214,18 @@ if reg_files:
 else:
     st.warning("⚠️ No hay registros")
 
-# =========================
 # CONTROL REGISTROS
-# =========================
 st.markdown("### 📋 Control registros")
 
 if normalizar(tipo_sel) in criticos:
-
     if not reg_files:
         st.error("❌ No hay registros cargados")
     else:
-        req_reg = {
-            "Permiso firmado": "permiso",
-            "ATS": "ats",
-            "Checklist": "checklist",
-            "Capacitación": "capacitacion"
-        }
+        req = ["permiso","ats","checklist","capacitacion"]
+        falt = [r for r in req if not any(r in normalizar(f[0]) for f in reg_files)]
 
-        faltantes = []
-        presentes = []
-
-        for nombre, clave in req_reg.items():
-            if any(clave in normalizar(f[0]) for f in reg_files):
-                presentes.append(nombre)
-            else:
-                faltantes.append(nombre)
-
-        if presentes:
-            st.info("✔ Presentes: " + ", ".join(presentes))
-
-        if faltantes:
-            st.error("❌ Faltan: " + ", ".join(faltantes))
+        if falt:
+            st.error("❌ Faltan: " + ", ".join(falt))
         else:
             st.success("✔ Registros completos")
 
@@ -244,7 +238,6 @@ st.markdown("## 📊 Dashboard SST")
 total, ok, parcial, critico = len(tipos), 0, 0, 0
 
 for tipo in tipos:
-
     base_files = []
     reg_files = []
 
@@ -259,30 +252,12 @@ for tipo in tipos:
         for _, _, files in os.walk(rr):
             reg_files += [f for f in files if f.endswith(".pdf")]
 
-    tipo_norm = normalizar(tipo)
-
-    if tipo_norm in criticos:
-
-        req_base = ["procedimiento","permiso","checklist","emergencia","ats"]
-        req_reg = ["permiso","ats","checklist","capacitacion"]
-
-        falt_base = [r for r in req_base if not any(r in normalizar(f) for f in base_files)]
-        falt_reg = [r for r in req_reg if not any(r in normalizar(f) for f in reg_files)]
-
-        if not base_files and not reg_files:
-            critico += 1
-        elif falt_base or falt_reg:
-            parcial += 1
-        else:
-            ok += 1
-
+    if not base_files and not reg_files:
+        critico += 1
+    elif not base_files or not reg_files:
+        parcial += 1
     else:
-        if not base_files and not reg_files:
-            critico += 1
-        elif not base_files or not reg_files:
-            parcial += 1
-        else:
-            ok += 1
+        ok += 1
 
 # KPI
 c1, c2, c3, c4 = st.columns(4)
