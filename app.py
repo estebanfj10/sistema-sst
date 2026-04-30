@@ -11,6 +11,12 @@ st.set_page_config(page_title="Sistema SST", page_icon="🦺", layout="wide")
 st.title("🦺 Sistema de Seguridad e Higiene")
 
 # =========================
+# NORMALIZAR
+# =========================
+def normalizar(txt):
+    return txt.lower().replace("_"," ").replace("-"," ").strip()
+
+# =========================
 # GITHUB
 # =========================
 def subir_a_github(ruta, nombre, contenido):
@@ -70,7 +76,7 @@ def obtener_tipos_github():
     return []
 
 # =========================
-# 🔥 REGISTROS GITHUB
+# REGISTROS GITHUB
 # =========================
 def obtener_registros_github(tipo):
 
@@ -110,30 +116,6 @@ def obtener_registros_github(tipo):
     return resultados
 
 # =========================
-# VENCIMIENTOS
-# =========================
-def evaluar_vencimiento(ruta, nombre):
-    reglas = {
-        "capacitacion":365,
-        "seguro":365,
-        "vtv":365,
-        "licencia":365*5
-    }
-
-    tipo = next((t for t in reglas if t in nombre.lower()), None)
-    if not tipo:
-        return None
-
-    fecha = datetime.fromtimestamp(os.path.getmtime(ruta))
-    venc = fecha + timedelta(days=reglas[tipo])
-
-    if datetime.now() > venc:
-        return "🔴 VENCIDO"
-    elif (venc - datetime.now()).days <= 30:
-        return "🟡 POR VENCER"
-    return "🟢 VIGENTE"
-
-# =========================
 # BASE
 # =========================
 base_dir = "documentos"
@@ -157,7 +139,7 @@ if not tipos:
     tipos = ["general"]
 
 # =========================
-# 📤 CARGA
+# CARGA
 # =========================
 st.markdown("## 📤 Cargar documento")
 
@@ -188,15 +170,13 @@ if archivo:
         st.success("✔ Guardado")
 
 # =========================
-# 🔎 CONSULTA
+# CONSULTA
 # =========================
 st.markdown("## 🔎 Consulta")
 
 tipo_sel = st.selectbox("Seleccionar tipo", tipos)
 
-# =========================
-# 📄 DOCUMENTACIÓN BASE
-# =========================
+# 📄 BASE
 st.markdown("### 📄 Documentación base")
 
 archivos_base = []
@@ -213,7 +193,6 @@ if not archivos_base:
 else:
     for nombre, ruta in archivos_base:
         st.write(f"📄 {nombre}")
-
         with open(ruta, "rb") as file:
             st.download_button(
                 f"📥 Descargar {nombre}",
@@ -222,19 +201,15 @@ else:
                 key=f"base_{nombre}"
             )
 
-# =========================
 # 📊 REGISTROS
-# =========================
 st.markdown("### 📊 Registros")
 
 archivos_reg = []
-
 reg_github = obtener_registros_github(tipo_sel)
 
 if reg_github:
 
     for item in reg_github:
-
         nombre = item["nombre"]
         subtipo = item["subtipo"]
         url = item["url"]
@@ -245,7 +220,6 @@ if reg_github:
 
         try:
             r = requests.get(url)
-
             if r.status_code == 200:
                 st.download_button(
                     label=f"📥 Descargar {nombre}",
@@ -253,9 +227,6 @@ if reg_github:
                     file_name=nombre,
                     key=f"github_{subtipo}_{nombre}"
                 )
-            else:
-                st.warning(f"No se pudo descargar {nombre}")
-
         except:
             st.error(f"Error al cargar {nombre}")
 
@@ -263,7 +234,7 @@ else:
     st.warning("⚠️ No hay registros")
 
 # =========================
-# 📋 CONTROL REGISTROS
+# CONTROL REGISTROS
 # =========================
 st.markdown("### 📋 Control registros")
 
@@ -274,14 +245,28 @@ criticos = [
 
 if tipo_sel in criticos:
 
-    requisitos = ["permiso","ats","checklist"]
-    faltantes = [
-        r for r in requisitos
-        if not any(r in a[0].lower() for a in archivos_reg)
-    ]
+    requisitos = {
+        "Procedimiento": "procedimiento",
+        "Permiso": "permiso",
+        "ATS": "ats",
+        "Checklist": "checklist",
+        "Capacitación": "capacitacion"
+    }
+
+    faltantes = []
+    presentes = []
+
+    for nombre, clave in requisitos.items():
+        if any(clave in normalizar(a[0]) for a in archivos_reg):
+            presentes.append(nombre)
+        else:
+            faltantes.append(nombre)
+
+    if presentes:
+        st.info("✔ Presentes: " + ", ".join(presentes))
 
     if faltantes:
-        st.error(f"❌ Faltan: {', '.join(faltantes)}")
+        st.error("❌ Faltan: " + ", ".join(faltantes))
     else:
         st.success("✔ Registros completos")
 
@@ -290,3 +275,4 @@ else:
         st.success("✔ Tiene registros")
     else:
         st.error("❌ Sin registros")
+    
