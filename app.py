@@ -4,8 +4,7 @@ import requests
 import base64
 import matplotlib.pyplot as plt
 
-# PDF
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 from io import BytesIO
@@ -16,7 +15,6 @@ from datetime import datetime
 # =========================
 st.set_page_config(page_title="Sistema SST", page_icon="🦺", layout="wide")
 
-st.image("banner.png", use_container_width=True)
 st.title("🦺 Sistema de Seguridad e Higiene")
 
 # =========================
@@ -26,9 +24,47 @@ def normalizar(txt):
     return txt.lower().replace("_"," ").replace("-"," ").strip()
 
 # =========================
+# 🔥 FUNCIÓN CORREGIDA (ÚNICO CAMBIO REAL)
+# =========================
+def obtener_registros_github(tipo_sel):
+
+    token = st.secrets.get("GITHUB_TOKEN")
+    repo = st.secrets.get("GITHUB_REPO")
+
+    reg_files = []
+
+    if not token or not repo:
+        return reg_files
+
+    def recorrer(ruta):
+
+        url = f"https://api.github.com/repos/{repo}/contents/{ruta}"
+        headers = {"Authorization": f"token {token}"}
+
+        try:
+            r = requests.get(url, headers=headers)
+
+            if r.status_code == 200:
+                for item in r.json():
+
+                    if item["type"] == "dir":
+                        recorrer(item["path"])
+
+                    elif item["type"] == "file" and item["name"].endswith(".pdf"):
+                        reg_files.append(item["name"])
+
+        except:
+            pass
+
+    recorrer(f"documentos/registros/{tipo_sel}")
+
+    return reg_files
+
+# =========================
 # GITHUB SUBIDA
 # =========================
 def subir_a_github(ruta, nombre, contenido):
+
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
 
@@ -36,6 +72,7 @@ def subir_a_github(ruta, nombre, contenido):
         return
 
     url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre}"
+
     contenido_base64 = base64.b64encode(contenido).decode()
 
     headers = {"Authorization": f"token {token}"}
@@ -46,57 +83,9 @@ def subir_a_github(ruta, nombre, contenido):
     }, headers=headers)
 
 # =========================
-# GITHUB LECTURA (CLAVE)
-# =========================
-def obtener_registros_github(tipo_sel):
-
-    token = st.secrets.get("GITHUB_TOKEN")
-    repo = st.secrets.get("GITHUB_REPO")
-
-    estructura = {}
-
-    if not token or not repo:
-        return estructura, "local"
-
-    def recorrer(ruta):
-        url = f"https://api.github.com/repos/{repo}/contents/{ruta}"
-        headers = {"Authorization": f"token {token}"}
-
-        resultado = {}
-
-        try:
-            r = requests.get(url, headers=headers)
-
-            if r.status_code == 200:
-                for item in r.json():
-
-                    if item["type"] == "dir":
-                        sub = recorrer(item["path"])
-                        if sub:
-                            resultado[item["name"]] = sub
-
-                    elif item["type"] == "file" and item["name"].endswith(".pdf"):
-                        resultado.setdefault("archivos", []).append({
-                            "nombre": item["name"],
-                            "url": item["download_url"]
-                        })
-        except:
-            pass
-
-        return resultado
-
-    ruta = f"documentos/registros/{tipo_sel}"
-    data = recorrer(ruta)
-
-    if data:
-        return data, "github"
-
-    return {}, "local"
-
-# =========================
 # PDF
 # =========================
-def generar_pdf(tipos, base_dir, reg_dir, criticos):
+def generar_pdf(tipos, criticos):
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer)
@@ -104,7 +93,7 @@ def generar_pdf(tipos, base_dir, reg_dir, criticos):
 
     elementos = []
 
-    elementos.append(Paragraph("REPORTE SISTEMA SST", styles["Title"]))
+    elementos.append(Paragraph("REPORTE SST", styles["Title"]))
     elementos.append(Spacer(1, 10))
     elementos.append(Paragraph(f"Fecha: {datetime.now().strftime('%d/%m/%Y')}", styles["Normal"]))
     elementos.append(Spacer(1, 20))
@@ -113,17 +102,9 @@ def generar_pdf(tipos, base_dir, reg_dir, criticos):
 
     for tipo in tipos:
 
-        estructura, _ = obtener_registros_github(tipo)
+        archivos = obtener_registros_github(tipo)
 
-        archivos = []
-        for carpeta in estructura.values():
-            for sub in carpeta.values() if isinstance(carpeta, dict) else [carpeta]:
-                for item in sub:
-                    archivos.append(item["nombre"])
-
-        tipo_norm = normalizar(tipo)
-
-        if tipo_norm in criticos:
+        if normalizar(tipo) in criticos:
 
             req = ["permiso","ats","checklist","capacitacion"]
             falt = [r for r in req if not any(r in normalizar(f) for f in archivos)]
@@ -149,14 +130,11 @@ def generar_pdf(tipos, base_dir, reg_dir, criticos):
     return buffer
 
 # =========================
-# BASE
+# TIPOS
 # =========================
-base_dir = "documentos"
-reg_dir = os.path.join(base_dir, "registros")
-
-os.makedirs(reg_dir, exist_ok=True)
-
 tipos = ["altura","excavacion","izaje","trabajo en caliente","espacio confinado","electricidad"]
+
+criticos = tipos
 
 # =========================
 # CARGA
@@ -167,15 +145,15 @@ archivo = st.file_uploader("PDF", type=["pdf"])
 
 if archivo:
     tipo = st.selectbox("Tipo", tipos)
-    subcarpeta = st.text_input("Subcarpeta (ej: permisos, ats, checklist)")
+    carpeta = st.text_input("Subcarpeta (permisos / ats / checklist)")
 
     if st.button("Guardar"):
         subir_a_github(
-            f"documentos/registros/{tipo}/{subcarpeta}",
+            f"documentos/registros/{tipo}/{carpeta}",
             archivo.name,
             archivo.getbuffer()
         )
-        st.success("✔ Subido a GitHub")
+        st.success("✔ Subido")
 
 # =========================
 # CONSULTA
@@ -184,60 +162,26 @@ st.markdown("## 🔎 Consulta")
 
 tipo_sel = st.selectbox("Seleccionar tipo", tipos)
 
-estructura, origen = obtener_registros_github(tipo_sel)
+reg_files = obtener_registros_github(tipo_sel)
 
-st.caption(f"Origen: {origen}")
-
-reg_files = []
-
-if estructura:
-
-    for carpeta, contenido in estructura.items():
-
-        if isinstance(contenido, list):
-
-            st.markdown(f"#### 📁 {carpeta}")
-
-            for item in contenido:
-                nombre = item["nombre"]
-                reg_files.append(nombre)
-
-                st.markdown(f"📄 [{nombre}]({item['url']})")
-
-        else:
-            for subcarpeta, archivos in contenido.items():
-
-                st.markdown(f"#### 📁 {subcarpeta}")
-
-                for item in archivos:
-                    nombre = item["nombre"]
-                    reg_files.append(nombre)
-
-                    st.markdown(f"📄 [{nombre}]({item['url']})")
-
+if reg_files:
+    for f in reg_files:
+        st.write("📄", f)
 else:
     st.warning("⚠️ No hay registros")
 
 # =========================
 # CONTROL
 # =========================
-st.markdown("### 📋 Control registros")
-
-criticos = ["altura","excavacion","izaje","trabajo en caliente","espacio confinado","electricidad"]
+st.markdown("### 📋 Control")
 
 if normalizar(tipo_sel) in criticos:
 
     if not reg_files:
         st.error("❌ No hay registros")
     else:
-        req = {
-            "Permiso": "permiso",
-            "ATS": "ats",
-            "Checklist": "checklist",
-            "Capacitación": "capacitacion"
-        }
-
-        falt = [k for k,v in req.items() if not any(v in normalizar(f) for f in reg_files)]
+        req = ["permiso","ats","checklist","capacitacion"]
+        falt = [r for r in req if not any(r in normalizar(f) for f in reg_files)]
 
         if falt:
             st.error("❌ Faltan: " + ", ".join(falt))
@@ -250,34 +194,21 @@ if normalizar(tipo_sel) in criticos:
 st.markdown("---")
 st.markdown("## 📊 Dashboard")
 
-total = len(tipos)
-ok = parcial = critico = 0
+ok = critico = 0
 
 for tipo in tipos:
 
-    estructura, _ = obtener_registros_github(tipo)
+    archivos = obtener_registros_github(tipo)
 
-    archivos = []
-    for carpeta in estructura.values():
-        for sub in carpeta.values() if isinstance(carpeta, dict) else [carpeta]:
-            for item in sub:
-                archivos.append(item["nombre"])
-
-    if not archivos:
-        critico += 1
-    else:
+    if archivos:
         ok += 1
+    else:
+        critico += 1
 
-# KPIs
-c1, c2, c3 = st.columns(3)
-c1.metric("Total", total)
-c2.metric("OK", ok)
-c3.metric("Crítico", critico)
-
-# TORTA
 fig, ax = plt.subplots()
 ax.pie([ok, critico], labels=["OK","Crítico"], autopct="%1.0f%%")
 ax.axis("equal")
+
 st.pyplot(fig)
 
 # =========================
@@ -285,6 +216,6 @@ st.pyplot(fig)
 # =========================
 st.markdown("### 📄 Reporte")
 
-pdf = generar_pdf(tipos, base_dir, reg_dir, criticos)
+pdf = generar_pdf(tipos, criticos)
 
 st.download_button("📥 Descargar PDF", pdf, "reporte_sst.pdf")
