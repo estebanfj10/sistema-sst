@@ -14,8 +14,8 @@ st.title("🦺 Sistema de Seguridad e Higiene")
 # GITHUB
 # =========================
 def subir_a_github(ruta, nombre, contenido):
-    token = st.secrets.get("GITHUB_TOKEN")
-    repo = st.secrets.get("GITHUB_REPO")
+    token = st.secrets.get("GITHUB_TOKEN", None)
+    repo = st.secrets.get("GITHUB_REPO", None)
 
     if not token or not repo:
         return False
@@ -31,8 +31,8 @@ def subir_a_github(ruta, nombre, contenido):
 
 
 def obtener_subtipos_github(tipo):
-    token = st.secrets.get("GITHUB_TOKEN")
-    repo = st.secrets.get("GITHUB_REPO")
+    token = st.secrets.get("GITHUB_TOKEN", None)
+    repo = st.secrets.get("GITHUB_REPO", None)
 
     if not token or not repo:
         return []
@@ -51,8 +51,8 @@ def obtener_subtipos_github(tipo):
 
 
 def obtener_tipos_github():
-    token = st.secrets.get("GITHUB_TOKEN")
-    repo = st.secrets.get("GITHUB_REPO")
+    token = st.secrets.get("GITHUB_TOKEN", None)
+    repo = st.secrets.get("GITHUB_REPO", None)
 
     if not token or not repo:
         return []
@@ -159,9 +159,7 @@ st.markdown("## 🔎 Consulta")
 
 tipo_sel = st.selectbox("Seleccionar tipo", tipos)
 
-# =========================
-# 📄 DOCUMENTACIÓN BASE
-# =========================
+# BASE
 st.markdown("### 📄 Documentación base")
 
 carpeta_base = os.path.join(base_dir, tipo_sel)
@@ -178,18 +176,10 @@ if not archivos_base:
 else:
     for nombre, ruta in archivos_base:
         st.write(f"📄 {nombre}")
-
         with open(ruta, "rb") as f:
-            st.download_button(
-                f"📥 Descargar {nombre}",
-                data=f,
-                file_name=nombre,
-                key=f"base_{nombre}"
-            )
+            st.download_button(f"📥 Descargar {nombre}", f, file_name=nombre)
 
-# =========================
-# 📊 REGISTROS
-# =========================
+# REGISTROS
 st.markdown("### 📊 Registros")
 
 carpeta_reg = os.path.join(reg_dir, tipo_sel)
@@ -206,19 +196,12 @@ if not archivos_reg:
 else:
     for nombre, ruta in archivos_reg:
         subtipo = os.path.basename(os.path.dirname(ruta))
-
         st.write(f"📁 {subtipo} → {nombre}")
-
         with open(ruta, "rb") as f:
-            st.download_button(
-                f"📥 Descargar {nombre}",
-                data=f,
-                file_name=nombre,
-                key=f"reg_{subtipo}_{nombre}"
-            )
+            st.download_button(f"📥 Descargar {nombre}", f, file_name=nombre)
 
 # =========================
-# 📋 CONTROL BASE REAL
+# CONTROL BASE
 # =========================
 st.markdown("### 📋 Control documentación base")
 
@@ -228,19 +211,13 @@ criticos = [
 ]
 
 if tipo_sel in criticos:
-
     requisitos = ["procedimiento","permiso","checklist","emergencia"]
-    faltantes = []
-
-    for r in requisitos:
-        if not any(r in archivo[0].lower() for archivo in archivos_base):
-            faltantes.append(r)
+    faltantes = [r for r in requisitos if not any(r in a[0].lower() for a in archivos_base)]
 
     if faltantes:
         st.error(f"❌ Faltan: {', '.join(faltantes)}")
     else:
         st.success("✔ Documentación completa")
-
 else:
     if archivos_base:
         st.success("✔ Tiene documentación")
@@ -248,23 +225,18 @@ else:
         st.error("❌ Falta documentación")
 
 # =========================
-# 📋 CONTROL REGISTROS
+# CONTROL REGISTROS
 # =========================
 st.markdown("### 📋 Control registros")
 
 if tipo_sel in criticos:
-
     requisitos = ["permiso","ats","checklist"]
-    faltantes = [
-        r for r in requisitos
-        if not any(r in a[0].lower() for a in archivos_reg)
-    ]
+    faltantes = [r for r in requisitos if not any(r in a[0].lower() for a in archivos_reg)]
 
     if faltantes:
         st.error(f"❌ Faltan: {', '.join(faltantes)}")
     else:
         st.success("✔ Registros completos")
-
 else:
     if archivos_reg:
         st.success("✔ Tiene registros")
@@ -272,7 +244,7 @@ else:
         st.error("❌ Sin registros")
 
 # =========================
-# 🚨 ALERTAS
+# ALERTAS
 # =========================
 st.markdown("## 🚨 Alertas")
 
@@ -289,3 +261,49 @@ if alertas:
         st.write(a)
 else:
     st.success("✔ Sin alertas")
+
+# =========================
+# 🟢 SEMÁFORO SST
+# =========================
+st.markdown("---")
+st.markdown("## 🟢 Estado general")
+
+for tipo in tipos:
+
+    carpeta_base = os.path.join(base_dir, tipo)
+    base_files = []
+    if os.path.exists(carpeta_base):
+        for _, _, files in os.walk(carpeta_base):
+            base_files += files
+
+    carpeta_reg = os.path.join(reg_dir, tipo)
+    reg_files = []
+    if os.path.exists(carpeta_reg):
+        for _, _, files in os.walk(carpeta_reg):
+            reg_files += files
+
+    estado = "🟢"
+    detalle = "Completo"
+
+    if tipo in criticos:
+
+        req_base = ["procedimiento","permiso","checklist","emergencia"]
+        falt_base = [r for r in req_base if not any(r in f.lower() for f in base_files)]
+
+        req_reg = ["permiso","ats","checklist"]
+        falt_reg = [r for r in req_reg if not any(r in f.lower() for f in reg_files)]
+
+        if falt_base or falt_reg:
+            estado = "🟡"
+            detalle = f"Base: {falt_base} / Reg: {falt_reg}"
+
+        if not base_files or not reg_files:
+            estado = "🔴"
+            detalle = "Sin documentación o registros"
+
+    else:
+        if not reg_files:
+            estado = "🔴"
+            detalle = "Sin registros"
+
+    st.write(f"{estado} {tipo} → {detalle}")
