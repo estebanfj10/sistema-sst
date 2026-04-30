@@ -4,7 +4,6 @@ import requests
 import base64
 from datetime import datetime, timedelta
 import pandas as pd
-import matplotlib.pyplot as plt
 
 # =========================
 # CONFIG
@@ -266,25 +265,19 @@ for tipo in tipos:
     else:
         critico += 1
 
-# =========================
 # MÉTRICAS
-# =========================
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Total", total)
 c2.metric("🟢 OK", ok)
 c3.metric("🟡 Parcial", parcial)
 c4.metric("🔴 Crítico", critico)
 
-# =========================
-# 📊 GRÁFICO DE TORTA
-# =========================
+# GRÁFICO (SIN LIBRERÍAS)
 st.markdown("### 📊 Distribución de estados")
 
-labels = ["OK", "Parcial", "Crítico"]
-values = [ok, parcial, critico]
+data_chart = {
+    "Estado": ["OK", "Parcial", "Crítico"],
+    "Cantidad": [ok, parcial, critico]
+}
 
-fig, ax = plt.subplots()
-ax.pie(values, labels=labels, autopct="%1.0f%%")
-ax.axis("equal")
-
-st.pyplot(fig)
+st.bar_chart(data_chart, x="Estado", y="Cantidad")
