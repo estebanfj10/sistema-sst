@@ -134,6 +134,7 @@ archivo = st.file_uploader("Seleccionar PDF", type=["pdf"])
 
 if archivo:
     tipo = st.selectbox("Tipo", tipos)
+
     subtipos = obtener_subtipos_github(tipo)
     if not subtipos:
         subtipos = ["otros"]
@@ -180,9 +181,52 @@ if archivos_base:
     for nombre, ruta in archivos_base:
         st.write(f"📄 {nombre}")
         with open(ruta, "rb") as file:
-            st.download_button("📥 Descargar", file, nombre)
+            st.download_button(
+                label=f"📥 Descargar {nombre}",
+                data=file,
+                file_name=nombre,
+                key=f"base_{nombre}"
+            )
 else:
     st.warning("⚠️ Sin documentación base")
+
+# =========================
+# 📊 REGISTROS (CON DESCARGA)
+# =========================
+st.markdown("### 📊 Registros")
+
+archivos_reg = []
+reg = obtener_registros_github(tipo_sel)
+
+if reg:
+    for item in reg:
+
+        nombre = item["nombre"]
+        subtipo = item["subtipo"]
+        url = item["url"]
+
+        archivos_reg.append((nombre, subtipo))
+
+        st.write(f"📁 {subtipo} → {nombre}")
+
+        # 🔽 DESCARGA REAL
+        try:
+            r = requests.get(url)
+
+            if r.status_code == 200:
+                st.download_button(
+                    label=f"📥 Descargar {nombre}",
+                    data=r.content,
+                    file_name=nombre,
+                    key=f"reg_{subtipo}_{nombre}"
+                )
+            else:
+                st.warning(f"No se pudo descargar {nombre}")
+
+        except:
+            st.error(f"Error al cargar {nombre}")
+else:
+    st.warning("⚠️ Sin registros")
 
 # =========================
 # 📋 CONTROL BASE
@@ -203,21 +247,6 @@ if tipo_sel in criticos:
     else:
         st.success("✔ Base completa")
         base_completa = True
-
-# =========================
-# 📊 REGISTROS
-# =========================
-st.markdown("### 📊 Registros")
-
-archivos_reg = []
-reg = obtener_registros_github(tipo_sel)
-
-if reg:
-    for item in reg:
-        archivos_reg.append((item["nombre"], item["subtipo"]))
-        st.write(f"📁 {item['subtipo']} → {item['nombre']}")
-else:
-    st.warning("⚠️ Sin registros")
 
 # =========================
 # 📋 CONTROL REGISTROS
