@@ -1,14 +1,6 @@
 import streamlit as st
 import os
-import requests
-import base64
 from datetime import datetime
-from io import BytesIO
-
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet
-
 import matplotlib.pyplot as plt
 
 # =========================
@@ -57,7 +49,6 @@ tipo_sel = st.selectbox("Seleccionar tipo", tipos)
 st.markdown("### 📄 Documentación base")
 
 base_files = []
-
 ruta_base = os.path.join(base_dir, tipo_sel)
 
 if os.path.exists(ruta_base):
@@ -74,7 +65,7 @@ else:
     st.warning("⚠️ No hay documentación base")
 
 # =========================
-# CONTROL BASE
+# CONTROL BASE (CRÍTICOS)
 # =========================
 st.markdown("### 📋 Control documentación base")
 
@@ -85,13 +76,24 @@ if normalizar(tipo_sel) in criticos:
     if not base_files:
         st.error("❌ No hay documentación base")
     else:
-        req = ["procedimiento","permiso","checklist","emergencia","ats"]
-        falt = [r for r in req if not any(r in f[0].lower() for f in base_files)]
+        req_base = {
+            "Procedimiento": "procedimiento",
+            "Permiso de trabajo": "permiso",
+            "Checklist": "checklist",
+            "Plan de emergencia": "emergencia",
+            "ATS": "ats"
+        }
 
-        if falt:
-            st.error(f"❌ Faltan: {', '.join(falt)}")
+        faltantes = []
+
+        for nombre, clave in req_base.items():
+            if not any(clave in f[0].lower() for f in base_files):
+                faltantes.append(nombre)
+
+        if faltantes:
+            st.error("❌ Faltan: " + ", ".join(faltantes))
         else:
-            st.success("✔ Completo")
+            st.success("✔ Documentación base completa")
 
 # =========================
 # REGISTROS
@@ -99,7 +101,6 @@ if normalizar(tipo_sel) in criticos:
 st.markdown("### 📊 Registros")
 
 reg_files = []
-
 ruta_reg = os.path.join(reg_dir, tipo_sel)
 
 if os.path.exists(ruta_reg):
@@ -116,7 +117,7 @@ else:
     st.warning("⚠️ No hay registros")
 
 # =========================
-# CONTROL REGISTROS
+# CONTROL REGISTROS (CRÍTICOS)
 # =========================
 st.markdown("### 📋 Control registros")
 
@@ -125,11 +126,21 @@ if normalizar(tipo_sel) in criticos:
     if not reg_files:
         st.error("❌ No hay registros cargados")
     else:
-        req = ["permiso","ats","checklist"]
-        falt = [r for r in req if not any(r in f[0].lower() for f in reg_files)]
+        req_reg = {
+            "Permiso firmado": "permiso",
+            "ATS": "ats",
+            "Checklist": "checklist",
+            "Capacitación": "capacitacion"
+        }
 
-        if falt:
-            st.error(f"❌ Faltan: {', '.join(falt)}")
+        faltantes = []
+
+        for nombre, clave in req_reg.items():
+            if not any(clave in f[0].lower() for f in reg_files):
+                faltantes.append(nombre)
+
+        if faltantes:
+            st.error("❌ Faltan: " + ", ".join(faltantes))
         else:
             st.success("✔ Registros completos")
 
@@ -162,7 +173,7 @@ for tipo in tipos:
     if tipo_norm in criticos:
 
         req_base = ["procedimiento","permiso","checklist","emergencia","ats"]
-        req_reg = ["permiso","ats","checklist"]
+        req_reg = ["permiso","ats","checklist","capacitacion"]
 
         falt_base = [r for r in req_base if not any(r in f.lower() for f in base_files)]
         falt_reg = [r for r in req_reg if not any(r in f.lower() for f in reg_files)]
@@ -189,7 +200,9 @@ c2.metric("🟢 OK", ok)
 c3.metric("🟡 Parcial", parcial)
 c4.metric("🔴 Crítico", critico)
 
-# TORTA
+# =========================
+# GRÁFICO TORTA
+# =========================
 fig, ax = plt.subplots()
 ax.pie(
     [ok, parcial, critico],
