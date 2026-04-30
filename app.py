@@ -10,7 +10,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 
-# GRAFICO
+# GRÁFICO
 import matplotlib.pyplot as plt
 
 # =========================
@@ -34,7 +34,9 @@ def subir_a_github(ruta, nombre, contenido):
     contenido_base64 = base64.b64encode(contenido).decode()
     headers = {"Authorization": f"token {token}"}
 
-    requests.put(url, json={"message": nombre, "content": contenido_base64}, headers=headers)
+    r = requests.put(url, json={"message": nombre, "content": contenido_base64}, headers=headers)
+    if r.status_code not in [200, 201]:
+        st.warning("⚠️ Error al subir a GitHub")
 
 def obtener_subtipos_github(tipo):
     token = st.secrets.get("GITHUB_TOKEN", None)
@@ -90,6 +92,7 @@ def generar_pdf(tipos, base_dir, reg_dir, criticos):
     colores_filas = []
 
     for tipo in tipos:
+
         base_files = []
         reg_files = []
 
@@ -127,9 +130,6 @@ def generar_pdf(tipos, base_dir, reg_dir, criticos):
         data.append([tipo.upper(), estado])
         colores_filas.append(color)
 
-    elementos.append(Paragraph(f"OK: {ok} | Parcial: {parcial} | Crítico: {critico_count}", styles["Heading2"]))
-    elementos.append(Spacer(1, 15))
-
     tabla = Table(data)
     estilo = [("GRID", (0,0), (-1,-1), 1, colors.black)]
 
@@ -137,8 +137,8 @@ def generar_pdf(tipos, base_dir, reg_dir, criticos):
         estilo.append(("BACKGROUND", (1,i), (1,i), color))
 
     tabla.setStyle(TableStyle(estilo))
-    elementos.append(tabla)
 
+    elementos.append(tabla)
     doc.build(elementos)
     buffer.seek(0)
     return buffer
@@ -162,6 +162,7 @@ tipos += obtener_tipos_github()
 tipos = sorted(list(set(tipos)))
 
 if not tipos:
+    st.warning("⚠️ No hay categorías cargadas")
     tipos = ["general"]
 
 # =========================
@@ -187,7 +188,7 @@ if archivo:
         st.success("✔ Guardado")
 
 # =========================
-# CONSULTA
+# CONSULTA + CONTROL
 # =========================
 st.markdown("## 🔎 Consulta")
 
@@ -205,9 +206,24 @@ if os.path.exists(os.path.join(base_dir, tipo_sel)):
 
 if base_files:
     for nombre, ruta in base_files:
-        st.download_button(nombre, open(ruta, "rb"), file_name=nombre)
+        with open(ruta, "rb") as f:
+            st.download_button(nombre, f.read(), file_name=nombre)
 else:
     st.warning("⚠️ Sin documentación base")
+
+# CONTROL BASE
+st.markdown("### 📋 Control documentación base")
+
+criticos = ["altura","excavacion","izaje","trabajo en caliente","espacio confinado","electricidad"]
+
+if tipo_sel in criticos:
+    req = ["procedimiento","permiso","checklist","emergencia","analisis"]
+    falt = [r for r in req if not any(r in f[0].lower() for f in base_files)]
+
+    if falt:
+        st.error(f"❌ Faltan: {', '.join(falt)}")
+    else:
+        st.success("✔ Completo")
 
 # REGISTROS
 st.markdown("### 📊 Registros")
@@ -221,17 +237,28 @@ if os.path.exists(os.path.join(reg_dir, tipo_sel)):
 
 if reg_files:
     for nombre, ruta in reg_files:
-        st.download_button(nombre, open(ruta, "rb"), file_name=nombre)
+        with open(ruta, "rb") as f:
+            st.download_button(nombre, f.read(), file_name=nombre)
 else:
     st.warning("⚠️ Sin registros")
+
+# CONTROL REGISTROS
+st.markdown("### 📋 Control registros")
+
+if tipo_sel in criticos:
+    req = ["permiso","ats","checklist","registro"]
+    falt = [r for r in req if not any(r in f[0].lower() for f in reg_files)]
+
+    if falt:
+        st.error(f"❌ Faltan: {', '.join(falt)}")
+    else:
+        st.success("✔ Registros completos")
 
 # =========================
 # DASHBOARD
 # =========================
 st.markdown("---")
 st.markdown("## 📊 Dashboard SST")
-
-criticos = ["altura","excavacion","izaje","trabajo en caliente","espacio confinado","electricidad"]
 
 total, ok, parcial, critico = len(tipos), 0, 0, 0
 
@@ -248,25 +275,12 @@ for tipo in tipos:
         for _, _, files in os.walk(os.path.join(reg_dir, tipo)):
             reg_files += [f for f in files if f.endswith(".pdf")]
 
-    estado = "OK"
-
-    if tipo in criticos:
-        if not base_files and not reg_files:
-            estado = "CRITICO"
-        elif not base_files or not reg_files:
-            estado = "PARCIAL"
-    else:
-        if not base_files and not reg_files:
-            estado = "CRITICO"
-        elif not base_files or not reg_files:
-            estado = "PARCIAL"
-
-    if estado == "OK":
-        ok += 1
-    elif estado == "PARCIAL":
+    if not base_files and not reg_files:
+        critico += 1
+    elif not base_files or not reg_files:
         parcial += 1
     else:
-        critico += 1
+        ok += 1
 
 # KPI
 c1, c2, c3, c4 = st.columns(4)
@@ -276,14 +290,20 @@ c3.metric("🟡 Parcial", parcial)
 c4.metric("🔴 Crítico", critico)
 
 # TORTA
-st.markdown("### 📊 Distribución")
-
 fig, ax = plt.subplots()
-ax.pie([ok, parcial, critico], labels=["OK","Parcial","Crítico"], autopct="%1.0f%%",
+ax.pie([ok, parcial, critico],
+       labels=["OK","Parcial","Crítico"],
+       autopct="%1.0f%%",
        colors=["#2ecc71","#f1c40f","#e74c3c"])
+ax.axis("equal")
+
 st.pyplot(fig)
 
+# =========================
 # PDF
+# =========================
 st.markdown("### 📄 Reporte SST")
+
 pdf = generar_pdf(tipos, base_dir, reg_dir, criticos)
+
 st.download_button("📥 Descargar PDF", pdf, "reporte_sst.pdf")
