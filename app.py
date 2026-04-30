@@ -103,21 +103,17 @@ os.makedirs(base_dir, exist_ok=True)
 os.makedirs(reg_dir, exist_ok=True)
 
 # =========================
-# 🔥 TIPOS AUTOMÁTICOS
+# TIPOS AUTOMÁTICOS
 # =========================
 tipos = []
 
-# LOCAL
 if os.path.exists(reg_dir):
     tipos += [
         d for d in os.listdir(reg_dir)
         if os.path.isdir(os.path.join(reg_dir, d))
     ]
 
-# GITHUB
 tipos += obtener_tipos_github()
-
-# LIMPIEZA
 tipos = sorted(list(set(tipos)))
 
 if not tipos:
@@ -222,14 +218,30 @@ else:
             )
 
 # =========================
-# 📋 CONTROL SST
+# 📋 CONTROL BASE CORREGIDO
 # =========================
-st.markdown("### 📋 Control SST")
+st.markdown("### 📋 Control documentación base")
 
 criticos = [
-    "excavacion","electricidad",
-    "espacio confinado","izaje","caliente","altura"
+    "altura","excavacion","izaje",
+    "trabajo en caliente","espacio confinado","electricidad"
 ]
+
+if tipo_sel in criticos:
+    if archivos_base:
+        st.success("✔ Documentación base disponible")
+    else:
+        st.error("❌ Falta documentación base")
+else:
+    if archivos_base:
+        st.success("✔ Tiene documentación")
+    else:
+        st.error("❌ Falta documentación")
+
+# =========================
+# 📋 CONTROL REGISTROS
+# =========================
+st.markdown("### 📋 Control registros")
 
 if tipo_sel in criticos:
     requisitos = ["permiso","ats","checklist"]
