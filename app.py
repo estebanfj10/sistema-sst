@@ -10,6 +10,9 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 
+# GRÁFICO TORTA
+import matplotlib.pyplot as plt
+
 # =========================
 # CONFIG
 # =========================
@@ -77,7 +80,7 @@ def obtener_tipos_github():
     return []
 
 # =========================
-# PDF PROFESIONAL
+# PDF
 # =========================
 def generar_pdf(tipos, base_dir, reg_dir, criticos):
 
@@ -87,7 +90,6 @@ def generar_pdf(tipos, base_dir, reg_dir, criticos):
 
     elementos = []
 
-    # Banner
     if os.path.exists("banner.png"):
         elementos.append(Image("banner.png", width=500, height=120))
         elementos.append(Spacer(1, 10))
@@ -147,7 +149,6 @@ def generar_pdf(tipos, base_dir, reg_dir, criticos):
     elementos.append(Spacer(1, 15))
 
     tabla = Table(data)
-
     estilo = [
         ("BACKGROUND", (0, 0), (-1, 0), colors.darkblue),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -186,17 +187,12 @@ reg_dir = os.path.join(base_dir, "registros")
 os.makedirs(base_dir, exist_ok=True)
 os.makedirs(reg_dir, exist_ok=True)
 
-# =========================
 # TIPOS
-# =========================
 tipos = []
-
 if os.path.exists(reg_dir):
     tipos += [d for d in os.listdir(reg_dir) if os.path.isdir(os.path.join(reg_dir, d))]
-
 tipos += obtener_tipos_github()
 tipos = sorted(list(set(tipos)))
-
 if not tipos:
     tipos = ["general"]
 
@@ -216,13 +212,10 @@ if archivo:
         ruta = os.path.join(reg_dir, tipo, subtipo)
         os.makedirs(ruta, exist_ok=True)
 
-        path = os.path.join(ruta, archivo.name)
-
-        with open(path, "wb") as f:
+        with open(os.path.join(ruta, archivo.name), "wb") as f:
             f.write(archivo.getbuffer())
 
         subir_a_github(f"documentos/registros/{tipo}/{subtipo}", archivo.name, archivo.getbuffer())
-
         st.success("✔ Guardado")
 
 # =========================
@@ -240,14 +233,12 @@ for tipo in tipos:
     base_files = []
     reg_files = []
 
-    carpeta_base = os.path.join(base_dir, tipo)
-    if os.path.exists(carpeta_base):
-        for _, _, files in os.walk(carpeta_base):
+    if os.path.exists(os.path.join(base_dir, tipo)):
+        for _, _, files in os.walk(os.path.join(base_dir, tipo)):
             base_files += [f for f in files if f.endswith(".pdf")]
 
-    carpeta_reg = os.path.join(reg_dir, tipo)
-    if os.path.exists(carpeta_reg):
-        for _, _, files in os.walk(carpeta_reg):
+    if os.path.exists(os.path.join(reg_dir, tipo)):
+        for _, _, files in os.walk(os.path.join(reg_dir, tipo)):
             reg_files += [f for f in files if f.endswith(".pdf")]
 
     estado = "OK"
@@ -278,18 +269,22 @@ c2.markdown(f"<div style='background:#2ecc71;color:white;padding:15px;border-rad
 c3.markdown(f"<div style='background:#f1c40f;color:black;padding:15px;border-radius:10px;text-align:center'><h3>Parcial</h3><h2>{parcial}</h2></div>", unsafe_allow_html=True)
 c4.markdown(f"<div style='background:#e74c3c;color:white;padding:15px;border-radius:10px;text-align:center'><h3>Crítico</h3><h2>{critico}</h2></div>", unsafe_allow_html=True)
 
-st.bar_chart({"OK": ok, "Parcial": parcial, "Crítico": critico})
+# TORTA
+st.markdown("### 📊 Distribución de estados")
 
-# =========================
+labels = ["OK", "Parcial", "Crítico"]
+sizes = [ok, parcial, critico]
+colors_pie = ["#2ecc71", "#f1c40f", "#e74c3c"]
+
+fig, ax = plt.subplots()
+ax.pie(sizes, labels=labels, autopct="%1.0f%%", colors=colors_pie, startangle=90)
+ax.axis("equal")
+
+st.pyplot(fig)
+
 # PDF
-# =========================
 st.markdown("### 📄 Reporte SST")
 
 pdf = generar_pdf(tipos, base_dir, reg_dir, criticos)
 
-st.download_button(
-    "📥 Descargar reporte PDF",
-    data=pdf,
-    file_name="reporte_sst.pdf",
-    mime="application/pdf"
-)
+st.download_button("📥 Descargar reporte PDF", pdf, "reporte_sst.pdf", "application/pdf")
