@@ -3,7 +3,6 @@ import os
 import requests
 import base64
 from datetime import datetime, timedelta
-import pandas as pd
 
 # =========================
 # CONFIG
@@ -75,30 +74,6 @@ def obtener_tipos_github():
     return []
 
 # =========================
-# VENCIMIENTOS
-# =========================
-def evaluar_vencimiento(ruta, nombre):
-    reglas = {
-        "capacitacion":365,
-        "seguro":365,
-        "vtv":365,
-        "licencia":365*5
-    }
-
-    tipo = next((t for t in reglas if t in nombre.lower()), None)
-    if not tipo:
-        return None
-
-    fecha = datetime.fromtimestamp(os.path.getmtime(ruta))
-    venc = fecha + timedelta(days=reglas[tipo])
-
-    if datetime.now() > venc:
-        return "🔴 VENCIDO"
-    elif (venc - datetime.now()).days <= 30:
-        return "🟡 POR VENCER"
-    return "🟢 VIGENTE"
-
-# =========================
 # BASE
 # =========================
 base_dir = "documentos"
@@ -108,15 +83,12 @@ os.makedirs(base_dir, exist_ok=True)
 os.makedirs(reg_dir, exist_ok=True)
 
 # =========================
-# TIPOS AUTOMÁTICOS
+# TIPOS
 # =========================
 tipos = []
 
 if os.path.exists(reg_dir):
-    tipos += [
-        d for d in os.listdir(reg_dir)
-        if os.path.isdir(os.path.join(reg_dir, d))
-    ]
+    tipos += [d for d in os.listdir(reg_dir) if os.path.isdir(os.path.join(reg_dir, d))]
 
 tipos += obtener_tipos_github()
 tipos = sorted(list(set(tipos)))
@@ -125,7 +97,7 @@ if not tipos:
     tipos = ["general"]
 
 # =========================
-# 📤 CARGA
+# CARGA
 # =========================
 st.markdown("## 📤 Cargar documento")
 
@@ -133,11 +105,7 @@ archivo = st.file_uploader("PDF", type=["pdf"])
 
 if archivo:
     tipo = st.selectbox("Tipo", tipos)
-
-    subtipos = obtener_subtipos_github(tipo)
-    if not subtipos:
-        subtipos = ["otros"]
-
+    subtipos = obtener_subtipos_github(tipo) or ["otros"]
     subtipo = st.selectbox("Subtipo", subtipos)
 
     if st.button("Guardar"):
@@ -149,16 +117,12 @@ if archivo:
         with open(path, "wb") as f:
             f.write(archivo.getbuffer())
 
-        subir_a_github(
-            f"documentos/registros/{tipo}/{subtipo}",
-            archivo.name,
-            archivo.getbuffer()
-        )
+        subir_a_github(f"documentos/registros/{tipo}/{subtipo}", archivo.name, archivo.getbuffer())
 
         st.success("✔ Guardado")
 
 # =========================
-# 🔎 CONSULTA
+# CONSULTA
 # =========================
 st.markdown("## 🔎 Consulta")
 
@@ -172,17 +136,13 @@ archivos_base = []
 
 if os.path.exists(carpeta_base):
     for root, _, files in os.walk(carpeta_base):
-        for f in files:
-            if f.endswith(".pdf"):
-                archivos_base.append((f, os.path.join(root, f)))
+        archivos_base += [(f, os.path.join(root, f)) for f in files if f.endswith(".pdf")]
 
 if not archivos_base:
     st.warning("⚠️ No hay documentación base")
 else:
     for nombre, ruta in archivos_base:
-        st.write(f"📄 {nombre}")
-        with open(ruta, "rb") as f:
-            st.download_button(f"📥 Descargar {nombre}", f, file_name=nombre)
+        st.download_button(f"📥 {nombre}", open(ruta, "rb"), file_name=nombre)
 
 # REGISTROS
 st.markdown("### 📊 Registros")
@@ -192,37 +152,23 @@ archivos_reg = []
 
 if os.path.exists(carpeta_reg):
     for root, _, files in os.walk(carpeta_reg):
-        for f in files:
-            if f.endswith(".pdf"):
-                archivos_reg.append((f, os.path.join(root, f)))
+        archivos_reg += [(f, os.path.join(root, f)) for f in files if f.endswith(".pdf")]
 
 if not archivos_reg:
     st.warning("⚠️ No hay registros")
 else:
     for nombre, ruta in archivos_reg:
-        subtipo = os.path.basename(os.path.dirname(ruta))
-        st.write(f"📁 {subtipo} → {nombre}")
-        with open(ruta, "rb") as f:
-            st.download_button(f"📥 Descargar {nombre}", f, file_name=nombre)
+        st.download_button(f"📥 {nombre}", open(ruta, "rb"), file_name=nombre)
 
 # =========================
-# CONTROL
-# =========================
-criticos = [
-    "altura","excavacion","izaje",
-    "trabajo en caliente","espacio confinado","electricidad"
-]
-
-# =========================
-# DASHBOARD
+# DASHBOARD PRO
 # =========================
 st.markdown("---")
 st.markdown("## 📊 Dashboard SST")
 
-total = len(tipos)
-ok = 0
-parcial = 0
-critico = 0
+criticos = ["altura","excavacion","izaje","trabajo en caliente","espacio confinado","electricidad"]
+
+total, ok, parcial, critico = len(tipos), 0, 0, 0
 
 for tipo in tipos:
 
@@ -242,18 +188,10 @@ for tipo in tipos:
     estado = "OK"
 
     if tipo in criticos:
-
-        req_base = ["procedimiento","permiso","checklist","emergencia"]
-        falt_base = [r for r in req_base if not any(r in f.lower() for f in base_files)]
-
-        req_reg = ["permiso","ats","checklist"]
-        falt_reg = [r for r in req_reg if not any(r in f.lower() for f in reg_files)]
-
         if not base_files and not reg_files:
             estado = "CRITICO"
-        elif falt_base or falt_reg:
+        elif not base_files or not reg_files:
             estado = "PARCIAL"
-
     else:
         if not base_files and not reg_files:
             estado = "CRITICO"
@@ -267,19 +205,22 @@ for tipo in tipos:
     else:
         critico += 1
 
-# MÉTRICAS
+# KPI
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("Total", total)
-c2.metric("🟢 OK", ok)
-c3.metric("🟡 Parcial", parcial)
-c4.metric("🔴 Crítico", critico)
 
-# GRÁFICO
-st.markdown("### 📊 Distribución de estados")
+c1.markdown(f"<div style='background:#1f4e79;color:white;padding:15px;border-radius:10px;text-align:center'><h3>Total</h3><h2>{total}</h2></div>", unsafe_allow_html=True)
+c2.markdown(f"<div style='background:#2ecc71;color:white;padding:15px;border-radius:10px;text-align:center'><h3>OK</h3><h2>{ok}</h2></div>", unsafe_allow_html=True)
+c3.markdown(f"<div style='background:#f1c40f;color:black;padding:15px;border-radius:10px;text-align:center'><h3>Parcial</h3><h2>{parcial}</h2></div>", unsafe_allow_html=True)
+c4.markdown(f"<div style='background:#e74c3c;color:white;padding:15px;border-radius:10px;text-align:center'><h3>Crítico</h3><h2>{critico}</h2></div>", unsafe_allow_html=True)
 
-data_chart = {
-    "Estado": ["OK", "Parcial", "Crítico"],
-    "Cantidad": [ok, parcial, critico]
-}
+# Gráfico
+st.markdown("### 📊 Distribución")
+st.bar_chart({"OK": ok, "Parcial": parcial, "Crítico": critico})
 
-st.bar_chart(data_chart, x="Estado", y="Cantidad")
+# Estado general
+if critico > 0:
+    st.error("⚠️ Hay tareas críticas")
+elif parcial > 0:
+    st.warning("⚠️ Hay tareas incompletas")
+else:
+    st.success("✔ Sistema en condiciones óptimas")
