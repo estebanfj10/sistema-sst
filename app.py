@@ -20,12 +20,14 @@ st.markdown("""
     color: white;
     margin-bottom: 20px;
 }
-.card {
-    padding: 15px;
-    border-radius: 10px;
-    background-color: #f1f5f9;
-    text-align: center;
-    margin-bottom: 10px;
+.header h1 {
+    margin: 0;
+    font-size: 32px;
+}
+.header p {
+    margin: 0;
+    font-size: 16px;
+    opacity: 0.8;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -37,6 +39,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# 🖼️ BANNER
 st.image("banner.png", use_container_width=True)
 
 # =========================
@@ -51,11 +54,13 @@ def normalizar(txt):
 def subir_a_github(ruta, nombre, contenido):
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
+
     if not token or not repo:
         return False
 
     url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre}"
     contenido_base64 = base64.b64encode(contenido).decode()
+
     headers = {"Authorization": f"token {token}"}
 
     requests.put(url, json={
@@ -66,6 +71,7 @@ def subir_a_github(ruta, nombre, contenido):
 def obtener_tipos_github():
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
+
     if not token or not repo:
         return []
 
@@ -84,6 +90,7 @@ def obtener_tipos_github():
 def obtener_subtipos_github(tipo):
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
+
     if not token or not repo:
         return []
 
@@ -104,6 +111,7 @@ def obtener_registros_github(tipo):
     repo = st.secrets.get("GITHUB_REPO")
 
     resultados = []
+
     if not token or not repo:
         return resultados
 
@@ -143,58 +151,12 @@ os.makedirs(reg_dir, exist_ok=True)
 # TIPOS
 # =========================
 tipos = []
+
 if os.path.exists(reg_dir):
     tipos += os.listdir(reg_dir)
 
 tipos += obtener_tipos_github()
 tipos = sorted(list(set(tipos)))
-
-# =========================
-# 📊 PANEL RESUMEN
-# =========================
-criticos = ["altura","excavacion","izaje","trabajo en caliente","espacio confinado","electricidad"]
-
-def evaluar_tipo(tipo):
-    archivos_base = []
-    ruta_base = os.path.join(base_dir, tipo)
-
-    if os.path.exists(ruta_base):
-        for root, _, files in os.walk(ruta_base):
-            for f in files:
-                if f.endswith(".pdf"):
-                    archivos_base.append(f)
-
-    reg = obtener_registros_github(tipo)
-    archivos_reg = [r["nombre"] for r in reg]
-
-    req_base = ["procedimiento","permiso","ats","checklist","emergencia"]
-    req_reg = ["permiso","ats","checklist","capacitacion"]
-
-    base_ok = all(any(r in normalizar(a) for a in archivos_base) for r in req_base)
-    reg_ok = all(any(r in normalizar(a) for a in archivos_reg) for r in req_reg)
-
-    if base_ok and reg_ok:
-        return "ok"
-    if base_ok or reg_ok:
-        return "parcial"
-    return "critico"
-
-ok = parcial = critico = 0
-
-for t in tipos:
-    if t in criticos:
-        estado = evaluar_tipo(t)
-        if estado == "ok":
-            ok += 1
-        elif estado == "parcial":
-            parcial += 1
-        else:
-            critico += 1
-
-col1, col2, col3 = st.columns(3)
-col1.metric("🟢 Completos", ok)
-col2.metric("🟡 Parciales", parcial)
-col3.metric("🔴 Críticos", critico)
 
 # =========================
 # 📤 CARGA
@@ -252,7 +214,12 @@ if archivos_base:
     for nombre, ruta in archivos_base:
         st.write(f"📄 {nombre}")
         with open(ruta, "rb") as file:
-            st.download_button("📥 Descargar", file, nombre)
+            st.download_button(
+                label=f"📥 Descargar {nombre}",
+                data=file,
+                file_name=nombre,
+                key=f"base_{nombre}"
+            )
 else:
     st.warning("⚠️ Sin documentación base")
 
@@ -265,47 +232,101 @@ archivos_reg = []
 reg = obtener_registros_github(tipo_sel)
 
 if reg:
+
     carpetas = {}
+
     for item in reg:
-        carpetas.setdefault(item["subtipo"], []).append(item)
+        subtipo = item["subtipo"]
+        carpetas.setdefault(subtipo, []).append(item)
 
     for carpeta, archivos in carpetas.items():
+
         st.markdown(f"### 📁 {carpeta}")
 
         for item in archivos:
+
             nombre = item["nombre"]
             url = item["url"]
 
             archivos_reg.append((nombre, carpeta))
-            st.write(f"📄 {nombre}")
+
+            icono = "📄"
+            if "permiso" in normalizar(nombre):
+                icono = "📝"
+            elif "ats" in normalizar(nombre):
+                icono = "📋"
+            elif "checklist" in normalizar(nombre):
+                icono = "✅"
+            elif "capacitacion" in normalizar(nombre):
+                icono = "🎓"
+
+            st.write(f"{icono} {nombre}")
 
             try:
                 r = requests.get(url)
                 if r.status_code == 200:
-                    st.download_button("📥 Descargar", r.content, nombre)
+                    st.download_button(
+                        label="📥 Descargar",
+                        data=r.content,
+                        file_name=nombre,
+                        key=f"reg_{carpeta}_{nombre}"
+                    )
             except:
-                st.error("Error descarga")
+                st.error(f"Error al cargar {nombre}")
 
 else:
     st.warning("⚠️ Sin registros")
 
 # =========================
-# 📋 CONTROL + SEMÁFORO
+# 📋 CONTROL BASE
 # =========================
-st.markdown("### 📋 Control")
+st.markdown("### 📋 Control documentación base")
 
-base_ok = False
-reg_ok = False
+criticos = ["altura","excavacion","izaje","trabajo en caliente","espacio confinado","electricidad"]
+
+base_completa = False
 
 if tipo_sel in criticos:
-    base_ok = any("procedimiento" in normalizar(a[0]) for a in archivos_base)
-    reg_ok = any("permiso" in normalizar(a[0]) for a in archivos_reg)
+    requisitos_base = ["procedimiento","permiso","ats","checklist","emergencia"]
+
+    faltantes = [r for r in requisitos_base if not any(r in normalizar(a[0]) for a in archivos_base)]
+
+    if faltantes:
+        st.error(f"❌ Faltan: {', '.join(faltantes)}")
+    else:
+        st.success("✔ Base completa")
+        base_completa = True
+
+# =========================
+# 📋 CONTROL REGISTROS
+# =========================
+st.markdown("### 📋 Control registros")
+
+reg_completo = False
+
+if tipo_sel in criticos:
+    requisitos = ["permiso","ats","checklist","capacitacion"]
+
+    faltantes = [r for r in requisitos if not any(r in normalizar(a[0]) for a in archivos_reg)]
+
+    if faltantes:
+        st.error(f"❌ Faltan: {', '.join(faltantes)}")
+    else:
+        st.success("✔ Registros completos")
+        reg_completo = True
+
+# =========================
+# 🚨 SEMÁFORO
+# =========================
+st.markdown("## 🚨 Estado general SST")
 
 if tipo_sel not in criticos:
-    st.info("No crítico")
-elif base_ok and reg_ok:
-    st.success("🟢 COMPLETO")
-elif base_ok or reg_ok:
-    st.warning("🟡 PARCIAL")
+    st.info("ℹ️ No crítico")
 else:
-    st.error("🔴 CRÍTICO")
+    if base_completa and reg_completo:
+        st.success("🟢 COMPLETO")
+    elif base_completa or reg_completo:
+        st.warning("🟡 PARCIAL")
+    else:
+        st.error("🔴 CRÍTICO")
+        
