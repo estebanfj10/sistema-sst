@@ -10,7 +10,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 
-# GRÁFICO TORTA
+# GRAFICO
 import matplotlib.pyplot as plt
 
 # =========================
@@ -27,24 +27,18 @@ st.title("🦺 Sistema de Seguridad e Higiene")
 def subir_a_github(ruta, nombre, contenido):
     token = st.secrets.get("GITHUB_TOKEN", None)
     repo = st.secrets.get("GITHUB_REPO", None)
-
     if not token or not repo:
         return False
 
     url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre}"
     contenido_base64 = base64.b64encode(contenido).decode()
-
-    data = {"message": f"Subida {nombre}", "content": contenido_base64}
     headers = {"Authorization": f"token {token}"}
 
-    r = requests.put(url, json=data, headers=headers)
-    return r.status_code in [200, 201]
-
+    requests.put(url, json={"message": nombre, "content": contenido_base64}, headers=headers)
 
 def obtener_subtipos_github(tipo):
     token = st.secrets.get("GITHUB_TOKEN", None)
     repo = st.secrets.get("GITHUB_REPO", None)
-
     if not token or not repo:
         return []
 
@@ -53,17 +47,13 @@ def obtener_subtipos_github(tipo):
 
     try:
         r = requests.get(url, headers=headers)
-        if r.status_code == 200:
-            return [i["name"] for i in r.json() if i["type"] == "dir"]
+        return [i["name"] for i in r.json() if i["type"] == "dir"]
     except:
-        pass
-
-    return []
+        return []
 
 def obtener_tipos_github():
     token = st.secrets.get("GITHUB_TOKEN", None)
     repo = st.secrets.get("GITHUB_REPO", None)
-
     if not token or not repo:
         return []
 
@@ -72,22 +62,17 @@ def obtener_tipos_github():
 
     try:
         r = requests.get(url, headers=headers)
-        if r.status_code == 200:
-            return [i["name"] for i in r.json() if i["type"] == "dir"]
+        return [i["name"] for i in r.json() if i["type"] == "dir"]
     except:
-        pass
-
-    return []
+        return []
 
 # =========================
 # PDF
 # =========================
 def generar_pdf(tipos, base_dir, reg_dir, criticos):
-
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer)
     styles = getSampleStyleSheet()
-
     elementos = []
 
     if os.path.exists("banner.png"):
@@ -105,18 +90,15 @@ def generar_pdf(tipos, base_dir, reg_dir, criticos):
     colores_filas = []
 
     for tipo in tipos:
-
         base_files = []
         reg_files = []
 
-        carpeta_base = os.path.join(base_dir, tipo)
-        if os.path.exists(carpeta_base):
-            for _, _, files in os.walk(carpeta_base):
+        if os.path.exists(os.path.join(base_dir, tipo)):
+            for _, _, files in os.walk(os.path.join(base_dir, tipo)):
                 base_files += [f for f in files if f.endswith(".pdf")]
 
-        carpeta_reg = os.path.join(reg_dir, tipo)
-        if os.path.exists(carpeta_reg):
-            for _, _, files in os.walk(carpeta_reg):
+        if os.path.exists(os.path.join(reg_dir, tipo)):
+            for _, _, files in os.walk(os.path.join(reg_dir, tipo)):
                 reg_files += [f for f in files if f.endswith(".pdf")]
 
         estado = "OK"
@@ -149,33 +131,16 @@ def generar_pdf(tipos, base_dir, reg_dir, criticos):
     elementos.append(Spacer(1, 15))
 
     tabla = Table(data)
-    estilo = [
-        ("BACKGROUND", (0, 0), (-1, 0), colors.darkblue),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("GRID", (0, 0), (-1, -1), 1, colors.black),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-    ]
+    estilo = [("GRID", (0,0), (-1,-1), 1, colors.black)]
 
     for i, color in enumerate(colores_filas, start=1):
-        estilo.append(("BACKGROUND", (1, i), (1, i), color))
+        estilo.append(("BACKGROUND", (1,i), (1,i), color))
 
     tabla.setStyle(TableStyle(estilo))
-
     elementos.append(tabla)
-    elementos.append(Spacer(1, 20))
-
-    if critico_count > 0:
-        conclusion = "Sistema con tareas críticas"
-    elif parcial > 0:
-        conclusion = "Sistema con tareas incompletas"
-    else:
-        conclusion = "Sistema en condiciones óptimas"
-
-    elementos.append(Paragraph(conclusion, styles["Heading2"]))
 
     doc.build(elementos)
     buffer.seek(0)
-
     return buffer
 
 # =========================
@@ -187,12 +152,15 @@ reg_dir = os.path.join(base_dir, "registros")
 os.makedirs(base_dir, exist_ok=True)
 os.makedirs(reg_dir, exist_ok=True)
 
+# =========================
 # TIPOS
+# =========================
 tipos = []
 if os.path.exists(reg_dir):
     tipos += [d for d in os.listdir(reg_dir) if os.path.isdir(os.path.join(reg_dir, d))]
 tipos += obtener_tipos_github()
 tipos = sorted(list(set(tipos)))
+
 if not tipos:
     tipos = ["general"]
 
@@ -217,6 +185,45 @@ if archivo:
 
         subir_a_github(f"documentos/registros/{tipo}/{subtipo}", archivo.name, archivo.getbuffer())
         st.success("✔ Guardado")
+
+# =========================
+# CONSULTA
+# =========================
+st.markdown("## 🔎 Consulta")
+
+tipo_sel = st.selectbox("Seleccionar tipo", tipos)
+
+# BASE
+st.markdown("### 📄 Documentación base")
+
+base_files = []
+if os.path.exists(os.path.join(base_dir, tipo_sel)):
+    for root, _, files in os.walk(os.path.join(base_dir, tipo_sel)):
+        for f in files:
+            if f.endswith(".pdf"):
+                base_files.append((f, os.path.join(root, f)))
+
+if base_files:
+    for nombre, ruta in base_files:
+        st.download_button(nombre, open(ruta, "rb"), file_name=nombre)
+else:
+    st.warning("⚠️ Sin documentación base")
+
+# REGISTROS
+st.markdown("### 📊 Registros")
+
+reg_files = []
+if os.path.exists(os.path.join(reg_dir, tipo_sel)):
+    for root, _, files in os.walk(os.path.join(reg_dir, tipo_sel)):
+        for f in files:
+            if f.endswith(".pdf"):
+                reg_files.append((f, os.path.join(root, f)))
+
+if reg_files:
+    for nombre, ruta in reg_files:
+        st.download_button(nombre, open(ruta, "rb"), file_name=nombre)
+else:
+    st.warning("⚠️ Sin registros")
 
 # =========================
 # DASHBOARD
@@ -263,28 +270,20 @@ for tipo in tipos:
 
 # KPI
 c1, c2, c3, c4 = st.columns(4)
-
-c1.markdown(f"<div style='background:#1f4e79;color:white;padding:15px;border-radius:10px;text-align:center'><h3>Total</h3><h2>{total}</h2></div>", unsafe_allow_html=True)
-c2.markdown(f"<div style='background:#2ecc71;color:white;padding:15px;border-radius:10px;text-align:center'><h3>OK</h3><h2>{ok}</h2></div>", unsafe_allow_html=True)
-c3.markdown(f"<div style='background:#f1c40f;color:black;padding:15px;border-radius:10px;text-align:center'><h3>Parcial</h3><h2>{parcial}</h2></div>", unsafe_allow_html=True)
-c4.markdown(f"<div style='background:#e74c3c;color:white;padding:15px;border-radius:10px;text-align:center'><h3>Crítico</h3><h2>{critico}</h2></div>", unsafe_allow_html=True)
+c1.metric("Total", total)
+c2.metric("🟢 OK", ok)
+c3.metric("🟡 Parcial", parcial)
+c4.metric("🔴 Crítico", critico)
 
 # TORTA
-st.markdown("### 📊 Distribución de estados")
-
-labels = ["OK", "Parcial", "Crítico"]
-sizes = [ok, parcial, critico]
-colors_pie = ["#2ecc71", "#f1c40f", "#e74c3c"]
+st.markdown("### 📊 Distribución")
 
 fig, ax = plt.subplots()
-ax.pie(sizes, labels=labels, autopct="%1.0f%%", colors=colors_pie, startangle=90)
-ax.axis("equal")
-
+ax.pie([ok, parcial, critico], labels=["OK","Parcial","Crítico"], autopct="%1.0f%%",
+       colors=["#2ecc71","#f1c40f","#e74c3c"])
 st.pyplot(fig)
 
 # PDF
 st.markdown("### 📄 Reporte SST")
-
 pdf = generar_pdf(tipos, base_dir, reg_dir, criticos)
-
-st.download_button("📥 Descargar reporte PDF", pdf, "reporte_sst.pdf", "application/pdf")
+st.download_button("📥 Descargar PDF", pdf, "reporte_sst.pdf")
