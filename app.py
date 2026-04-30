@@ -49,6 +49,26 @@ def obtener_subtipos_github(tipo):
 
     return []
 
+
+def obtener_tipos_github():
+    token = st.secrets.get("GITHUB_TOKEN")
+    repo = st.secrets.get("GITHUB_REPO")
+
+    if not token or not repo:
+        return []
+
+    url = f"https://api.github.com/repos/{repo}/contents/documentos/registros"
+    headers = {"Authorization": f"token {token}"}
+
+    try:
+        r = requests.get(url, headers=headers)
+        if r.status_code == 200:
+            return [i["name"] for i in r.json() if i["type"] == "dir"]
+    except:
+        pass
+
+    return []
+
 # =========================
 # VENCIMIENTOS
 # =========================
@@ -82,11 +102,26 @@ reg_dir = os.path.join(base_dir, "registros")
 os.makedirs(base_dir, exist_ok=True)
 os.makedirs(reg_dir, exist_ok=True)
 
-tipos = [
-    "ats","caliente","electricidad",
-    "espacio confinado","excavacion",
-    "general","herramientas","izaje"
-]
+# =========================
+# 🔥 TIPOS AUTOMÁTICOS
+# =========================
+tipos = []
+
+# LOCAL
+if os.path.exists(reg_dir):
+    tipos += [
+        d for d in os.listdir(reg_dir)
+        if os.path.isdir(os.path.join(reg_dir, d))
+    ]
+
+# GITHUB
+tipos += obtener_tipos_github()
+
+# LIMPIEZA
+tipos = sorted(list(set(tipos)))
+
+if not tipos:
+    tipos = ["general"]
 
 # =========================
 # 📤 CARGA
@@ -150,7 +185,7 @@ else:
 
         with open(ruta, "rb") as f:
             st.download_button(
-                label=f"📥 Descargar {nombre}",
+                f"📥 Descargar {nombre}",
                 data=f,
                 file_name=nombre,
                 key=f"base_{nombre}"
@@ -180,7 +215,7 @@ else:
 
         with open(ruta, "rb") as f:
             st.download_button(
-                label=f"📥 Descargar {nombre}",
+                f"📥 Descargar {nombre}",
                 data=f,
                 file_name=nombre,
                 key=f"reg_{subtipo}_{nombre}"
@@ -193,7 +228,7 @@ st.markdown("### 📋 Control SST")
 
 criticos = [
     "excavacion","electricidad",
-    "espacio confinado","izaje","caliente"
+    "espacio confinado","izaje","caliente","altura"
 ]
 
 if tipo_sel in criticos:
