@@ -3,6 +3,8 @@ import os
 import requests
 import base64
 from datetime import datetime, timedelta
+import pandas as pd
+import matplotlib.pyplot as plt
 
 # =========================
 # CONFIG
@@ -11,7 +13,7 @@ st.set_page_config(page_title="Sistema SST", page_icon="🦺", layout="wide")
 st.title("🦺 Sistema de Seguridad e Higiene")
 
 # =========================
-# GITHUB (opcional en local)
+# GITHUB
 # =========================
 def subir_a_github(ruta, nombre, contenido):
     token = st.secrets.get("GITHUB_TOKEN", None)
@@ -201,96 +203,42 @@ else:
             st.download_button(f"📥 Descargar {nombre}", f, file_name=nombre)
 
 # =========================
-# CONTROL BASE
+# CONTROL
 # =========================
-st.markdown("### 📋 Control documentación base")
-
 criticos = [
     "altura","excavacion","izaje",
     "trabajo en caliente","espacio confinado","electricidad"
 ]
 
-if tipo_sel in criticos:
-    requisitos = ["procedimiento","permiso","checklist","emergencia"]
-    faltantes = [r for r in requisitos if not any(r in a[0].lower() for a in archivos_base)]
-
-    if faltantes:
-        st.error(f"❌ Faltan: {', '.join(faltantes)}")
-    else:
-        st.success("✔ Documentación completa")
-else:
-    if archivos_base:
-        st.success("✔ Tiene documentación")
-    else:
-        st.error("❌ Falta documentación")
-
 # =========================
-# CONTROL REGISTROS
-# =========================
-st.markdown("### 📋 Control registros")
-
-if tipo_sel in criticos:
-    requisitos = ["permiso","ats","checklist"]
-    faltantes = [r for r in requisitos if not any(r in a[0].lower() for a in archivos_reg)]
-
-    if faltantes:
-        st.error(f"❌ Faltan: {', '.join(faltantes)}")
-    else:
-        st.success("✔ Registros completos")
-else:
-    if archivos_reg:
-        st.success("✔ Tiene registros")
-    else:
-        st.error("❌ Sin registros")
-
-# =========================
-# 🚨 ALERTAS
-# =========================
-st.markdown("## 🚨 Alertas")
-
-alertas = []
-
-for root, _, files in os.walk(reg_dir):
-    for f in files:
-        if f.endswith(".pdf"):
-            estado = evaluar_vencimiento(os.path.join(root, f), f)
-            if estado:
-                alertas.append(f"{estado} - {f}")
-
-if alertas:
-    for a in alertas:
-        st.write(a)
-else:
-    st.success("✔ Sin alertas")
-
-# =========================
-# 🟢 SEMÁFORO SST DEFINITIVO
+# DASHBOARD
 # =========================
 st.markdown("---")
-st.markdown("## 🟢 Estado general")
+st.markdown("## 📊 Dashboard SST")
+
+total = len(tipos)
+ok = 0
+parcial = 0
+critico = 0
 
 for tipo in tipos:
 
+    base_files = []
+    reg_files = []
+
     # BASE
     carpeta_base = os.path.join(base_dir, tipo)
-    base_files = []
     if os.path.exists(carpeta_base):
-        for root, _, files in os.walk(carpeta_base):
-            for f in files:
-                if f.endswith(".pdf"):
-                    base_files.append(f)
+        for _, _, files in os.walk(carpeta_base):
+            base_files += [f for f in files if f.endswith(".pdf")]
 
     # REGISTROS
     carpeta_reg = os.path.join(reg_dir, tipo)
-    reg_files = []
     if os.path.exists(carpeta_reg):
-        for root, _, files in os.walk(carpeta_reg):
-            for f in files:
-                if f.endswith(".pdf"):
-                    reg_files.append(f)
+        for _, _, files in os.walk(carpeta_reg):
+            reg_files += [f for f in files if f.endswith(".pdf")]
 
-    estado = "🟢"
-    detalle = "Completo"
+    estado = "OK"
 
     if tipo in criticos:
 
@@ -301,28 +249,42 @@ for tipo in tipos:
         falt_reg = [r for r in req_reg if not any(r in f.lower() for f in reg_files)]
 
         if not base_files and not reg_files:
-            estado = "🔴"
-            detalle = "Sin base ni registros"
-
+            estado = "CRITICO"
         elif falt_base or falt_reg:
-            estado = "🟡"
-            detalle = f"Base: {falt_base} / Reg: {falt_reg}"
-
-        else:
-            estado = "🟢"
-            detalle = "Completo"
+            estado = "PARCIAL"
 
     else:
         if not base_files and not reg_files:
-            estado = "🔴"
-            detalle = "Sin documentación"
-
+            estado = "CRITICO"
         elif not base_files or not reg_files:
-            estado = "🟡"
-            detalle = "Falta base o registros"
+            estado = "PARCIAL"
 
-        else:
-            estado = "🟢"
-            detalle = "OK"
+    if estado == "OK":
+        ok += 1
+    elif estado == "PARCIAL":
+        parcial += 1
+    else:
+        critico += 1
 
-    st.write(f"{estado} {tipo} → {detalle}")
+# =========================
+# MÉTRICAS
+# =========================
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Total", total)
+c2.metric("🟢 OK", ok)
+c3.metric("🟡 Parcial", parcial)
+c4.metric("🔴 Crítico", critico)
+
+# =========================
+# 📊 GRÁFICO DE TORTA
+# =========================
+st.markdown("### 📊 Distribución de estados")
+
+labels = ["OK", "Parcial", "Crítico"]
+values = [ok, parcial, critico]
+
+fig, ax = plt.subplots()
+ax.pie(values, labels=labels, autopct="%1.0f%%")
+ax.axis("equal")
+
+st.pyplot(fig)
