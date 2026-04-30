@@ -9,6 +9,10 @@ import pandas as pd
 # CONFIG
 # =========================
 st.set_page_config(page_title="Sistema SST", page_icon="🦺", layout="wide")
+
+# 🔥 BANNER
+st.image("banner.png", use_container_width=True)
+
 st.title("🦺 Sistema de Seguridad e Higiene")
 
 # =========================
@@ -225,13 +229,11 @@ for tipo in tipos:
     base_files = []
     reg_files = []
 
-    # BASE
     carpeta_base = os.path.join(base_dir, tipo)
     if os.path.exists(carpeta_base):
         for _, _, files in os.walk(carpeta_base):
             base_files += [f for f in files if f.endswith(".pdf")]
 
-    # REGISTROS
     carpeta_reg = os.path.join(reg_dir, tipo)
     if os.path.exists(carpeta_reg):
         for _, _, files in os.walk(carpeta_reg):
@@ -272,7 +274,7 @@ c2.metric("🟢 OK", ok)
 c3.metric("🟡 Parcial", parcial)
 c4.metric("🔴 Crítico", critico)
 
-# GRÁFICO (SIN LIBRERÍAS)
+# GRÁFICO
 st.markdown("### 📊 Distribución de estados")
 
 data_chart = {
