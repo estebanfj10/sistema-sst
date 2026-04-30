@@ -2,7 +2,6 @@ import streamlit as st
 import os
 import requests
 import base64
-from datetime import datetime, timedelta
 
 # =========================
 # CONFIG
@@ -29,30 +28,12 @@ def subir_a_github(ruta, nombre, contenido):
     url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre}"
     contenido_base64 = base64.b64encode(contenido).decode()
 
-    data = {"message": f"Subida {nombre}", "content": contenido_base64}
     headers = {"Authorization": f"token {token}"}
 
-    r = requests.put(url, json=data, headers=headers)
-    return r.status_code in [200, 201]
-
-def obtener_subtipos_github(tipo):
-    token = st.secrets.get("GITHUB_TOKEN")
-    repo = st.secrets.get("GITHUB_REPO")
-
-    if not token or not repo:
-        return []
-
-    url = f"https://api.github.com/repos/{repo}/contents/documentos/registros/{tipo}"
-    headers = {"Authorization": f"token {token}"}
-
-    try:
-        r = requests.get(url, headers=headers)
-        if r.status_code == 200:
-            return [i["name"] for i in r.json() if i["type"] == "dir"]
-    except:
-        pass
-
-    return []
+    requests.put(url, json={
+        "message": nombre,
+        "content": contenido_base64
+    }, headers=headers)
 
 def obtener_tipos_github():
     token = st.secrets.get("GITHUB_TOKEN")
@@ -73,9 +54,6 @@ def obtener_tipos_github():
 
     return []
 
-# =========================
-# REGISTROS GITHUB
-# =========================
 def obtener_registros_github(tipo):
 
     token = st.secrets.get("GITHUB_TOKEN")
@@ -94,13 +72,10 @@ def obtener_registros_github(tipo):
             r = requests.get(url, headers=headers)
             if r.status_code == 200:
                 for item in r.json():
-
                     if item["type"] == "dir":
                         recorrer(item["path"])
-
                     elif item["type"] == "file" and item["name"].endswith(".pdf"):
                         carpeta = item["path"].split("/")[-2]
-
                         resultados.append({
                             "nombre": item["name"],
                             "url": item["download_url"],
@@ -127,44 +102,10 @@ os.makedirs(reg_dir, exist_ok=True)
 tipos = []
 
 if os.path.exists(reg_dir):
-    tipos += [d for d in os.listdir(reg_dir) if os.path.isdir(os.path.join(reg_dir, d))]
+    tipos += os.listdir(reg_dir)
 
 tipos += obtener_tipos_github()
 tipos = sorted(list(set(tipos)))
-
-if not tipos:
-    tipos = ["general"]
-
-# =========================
-# CARGA
-# =========================
-st.markdown("## 📤 Cargar documento")
-
-archivo = st.file_uploader("PDF", type=["pdf"])
-
-if archivo:
-    tipo = st.selectbox("Tipo", tipos)
-
-    subtipos = obtener_subtipos_github(tipo)
-    if not subtipos:
-        subtipos = ["otros"]
-
-    subtipo = st.selectbox("Subtipo", subtipos)
-
-    if st.button("Guardar"):
-        ruta = os.path.join(reg_dir, tipo, subtipo)
-        os.makedirs(ruta, exist_ok=True)
-
-        with open(os.path.join(ruta, archivo.name), "wb") as f:
-            f.write(archivo.getbuffer())
-
-        subir_a_github(
-            f"documentos/registros/{tipo}/{subtipo}",
-            archivo.name,
-            archivo.getbuffer()
-        )
-
-        st.success("✔ Guardado")
 
 # =========================
 # CONSULTA
@@ -179,21 +120,42 @@ tipo_sel = st.selectbox("Seleccionar tipo", tipos)
 st.markdown("### 📄 Documentación base")
 
 archivos_base = []
-carpeta_base = os.path.join(base_dir, tipo_sel)
+ruta_base = os.path.join(base_dir, tipo_sel)
 
-if os.path.exists(carpeta_base):
-    for root, _, files in os.walk(carpeta_base):
+if os.path.exists(ruta_base):
+    for root, _, files in os.walk(ruta_base):
         for f in files:
             if f.endswith(".pdf"):
                 archivos_base.append((f, os.path.join(root, f)))
 
-if not archivos_base:
-    st.warning("⚠️ No hay documentación base")
-else:
+if archivos_base:
     for nombre, ruta in archivos_base:
         st.write(f"📄 {nombre}")
         with open(ruta, "rb") as file:
-            st.download_button(f"📥 Descargar {nombre}", file, nombre)
+            st.download_button("Descargar", file, nombre)
+else:
+    st.warning("⚠️ Sin documentación base")
+
+# =========================
+# 📋 CONTROL BASE
+# =========================
+st.markdown("### 📋 Control documentación base")
+
+criticos = ["altura","excavacion","izaje","trabajo en caliente","espacio confinado","electricidad"]
+
+base_completa = False
+
+if tipo_sel in criticos:
+
+    requisitos_base = ["procedimiento","permiso","ats","checklist","emergencia"]
+
+    faltantes = [r for r in requisitos_base if not any(r in normalizar(a[0]) for a in archivos_base)]
+
+    if faltantes:
+        st.error(f"❌ Faltan: {', '.join(faltantes)}")
+    else:
+        st.success("✔ Base completa")
+        base_completa = True
 
 # =========================
 # 📊 REGISTROS
@@ -201,66 +163,47 @@ else:
 st.markdown("### 📊 Registros")
 
 archivos_reg = []
-reg_github = obtener_registros_github(tipo_sel)
+reg = obtener_registros_github(tipo_sel)
 
-if reg_github:
-    for item in reg_github:
-        nombre = item["nombre"]
-        subtipo = item["subtipo"]
-        url = item["url"]
-
-        archivos_reg.append((nombre, subtipo))
-
-        st.write(f"📁 {subtipo} → {nombre}")
-
-        try:
-            r = requests.get(url)
-            if r.status_code == 200:
-                st.download_button(
-                    f"📥 Descargar {nombre}",
-                    r.content,
-                    nombre,
-                    key=f"{nombre}"
-                )
-        except:
-            st.error(f"Error al cargar {nombre}")
+if reg:
+    for item in reg:
+        archivos_reg.append((item["nombre"], item["subtipo"]))
+        st.write(f"📁 {item['subtipo']} → {item['nombre']}")
 else:
-    st.warning("⚠️ No hay registros")
+    st.warning("⚠️ Sin registros")
 
 # =========================
-# 🚨 SEMÁFORO (NUEVO)
+# 📋 CONTROL REGISTROS
+# =========================
+st.markdown("### 📋 Control registros")
+
+reg_completo = False
+
+if tipo_sel in criticos:
+
+    requisitos = ["permiso","ats","checklist","capacitacion"]
+
+    faltantes = [r for r in requisitos if not any(r in normalizar(a[0]) for a in archivos_reg)]
+
+    if faltantes:
+        st.error(f"❌ Faltan: {', '.join(faltantes)}")
+    else:
+        st.success("✔ Registros completos")
+        reg_completo = True
+
+# =========================
+# 🚨 SEMÁFORO
 # =========================
 st.markdown("## 🚨 Estado general SST")
 
-def evaluar_estado(tipo, base, reg):
+if tipo_sel not in criticos:
+    st.info("ℹ️ No crítico")
 
-    criticos = [
-        "altura","excavacion","izaje",
-        "trabajo en caliente","espacio confinado","electricidad"
-    ]
-
-    if tipo not in criticos:
-        return "ℹ️ NO CRÍTICO"
-
-    req_base = ["procedimiento","permiso","ats","checklist","emergencia"]
-    req_reg = ["permiso","ats","checklist","capacitacion"]
-
-    base_ok = all(any(r in normalizar(a[0]) for a in base) for r in req_base)
-    reg_ok = all(any(r in normalizar(a[0]) for a in reg) for r in req_reg)
-
-    if base_ok and reg_ok:
-        return "🟢 COMPLETO"
-    if base_ok or reg_ok:
-        return "🟡 PARCIAL"
-    return "🔴 CRÍTICO"
-
-estado = evaluar_estado(tipo_sel, archivos_base, archivos_reg)
-
-if "🟢" in estado:
-    st.success(estado)
-elif "🟡" in estado:
-    st.warning(estado)
-elif "🔴" in estado:
-    st.error(estado)
 else:
-    st.info(estado)
+    if base_completa and reg_completo:
+        st.success("🟢 COMPLETO")
+    elif base_completa or reg_completo:
+        st.warning("🟡 PARCIAL")
+    else:
+        st.error("🔴 CRÍTICO")
+        
