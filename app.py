@@ -7,6 +7,10 @@ import base64
 # CONFIG
 # =========================
 st.set_page_config(page_title="Sistema SST", page_icon="🦺", layout="wide")
+
+# 🖼️ BANNER
+st.image("banner.png", use_container_width=True)
+
 st.title("🦺 Sistema de Seguridad e Higiene")
 
 # =========================
