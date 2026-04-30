@@ -70,7 +70,7 @@ def obtener_tipos_github():
     return []
 
 # =========================
-# 🔥 LECTURA GITHUB REGISTROS
+# 🔥 REGISTROS GITHUB
 # =========================
 def obtener_registros_github(tipo):
 
@@ -83,13 +83,11 @@ def obtener_registros_github(tipo):
         return resultados
 
     def recorrer(ruta):
-
         url = f"https://api.github.com/repos/{repo}/contents/{ruta}"
         headers = {"Authorization": f"token {token}"}
 
         try:
             r = requests.get(url, headers=headers)
-
             if r.status_code == 200:
                 for item in r.json():
 
@@ -105,12 +103,10 @@ def obtener_registros_github(tipo):
                             "url": item["download_url"],
                             "subtipo": carpeta
                         })
-
         except:
             pass
 
     recorrer(f"documentos/registros/{tipo}")
-
     return resultados
 
 # =========================
@@ -198,6 +194,37 @@ st.markdown("## 🔎 Consulta")
 
 tipo_sel = st.selectbox("Seleccionar tipo", tipos)
 
+# =========================
+# 📄 DOCUMENTACIÓN BASE
+# =========================
+st.markdown("### 📄 Documentación base")
+
+archivos_base = []
+carpeta_base = os.path.join(base_dir, tipo_sel)
+
+if os.path.exists(carpeta_base):
+    for root, _, files in os.walk(carpeta_base):
+        for f in files:
+            if f.endswith(".pdf"):
+                archivos_base.append((f, os.path.join(root, f)))
+
+if not archivos_base:
+    st.warning("⚠️ No hay documentación base")
+else:
+    for nombre, ruta in archivos_base:
+        st.write(f"📄 {nombre}")
+
+        with open(ruta, "rb") as file:
+            st.download_button(
+                f"📥 Descargar {nombre}",
+                data=file,
+                file_name=nombre,
+                key=f"base_{nombre}"
+            )
+
+# =========================
+# 📊 REGISTROS
+# =========================
 st.markdown("### 📊 Registros")
 
 archivos_reg = []
