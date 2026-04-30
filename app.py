@@ -176,7 +176,9 @@ st.markdown("## 🔎 Consulta")
 
 tipo_sel = st.selectbox("Seleccionar tipo", tipos)
 
-# 📄 BASE
+# =========================
+# 📄 DOCUMENTACIÓN BASE
+# =========================
 st.markdown("### 📄 Documentación base")
 
 archivos_base = []
@@ -201,7 +203,52 @@ else:
                 key=f"base_{nombre}"
             )
 
+# =========================
+# 📋 CONTROL BASE
+# =========================
+st.markdown("### 📋 Control documentación base")
+
+criticos = [
+    "altura","excavacion","izaje",
+    "trabajo en caliente","espacio confinado","electricidad"
+]
+
+if tipo_sel in criticos:
+
+    requisitos_base = {
+        "Procedimiento": "procedimiento",
+        "Permiso": "permiso",
+        "ATS": "ats",
+        "Checklist": "checklist",
+        "Emergencia": "emergencia"
+    }
+
+    faltantes_base = []
+    presentes_base = []
+
+    for nombre, clave in requisitos_base.items():
+        if any(clave in normalizar(a[0]) for a in archivos_base):
+            presentes_base.append(nombre)
+        else:
+            faltantes_base.append(nombre)
+
+    if presentes_base:
+        st.info("✔ Base presente: " + ", ".join(presentes_base))
+
+    if faltantes_base:
+        st.error("❌ Base faltante: " + ", ".join(faltantes_base))
+    else:
+        st.success("✔ Documentación base completa")
+
+else:
+    if archivos_base:
+        st.success("✔ Tiene documentación base")
+    else:
+        st.error("❌ Sin documentación base")
+
+# =========================
 # 📊 REGISTROS
+# =========================
 st.markdown("### 📊 Registros")
 
 archivos_reg = []
@@ -234,14 +281,9 @@ else:
     st.warning("⚠️ No hay registros")
 
 # =========================
-# CONTROL REGISTROS
+# 📋 CONTROL REGISTROS
 # =========================
 st.markdown("### 📋 Control registros")
-
-criticos = [
-    "altura","excavacion","izaje",
-    "trabajo en caliente","espacio confinado","electricidad"
-]
 
 if tipo_sel in criticos:
 
@@ -275,4 +317,3 @@ else:
         st.success("✔ Tiene registros")
     else:
         st.error("❌ Sin registros")
-    
