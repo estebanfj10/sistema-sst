@@ -1,17 +1,13 @@
 import streamlit as st
 import os
-import requests
-import base64
-from datetime import datetime
-from io import BytesIO
+import matplotlib.pyplot as plt
 
 # PDF
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
-
-# GRÁFICO
-import matplotlib.pyplot as plt
+from io import BytesIO
+from datetime import datetime
 
 # =========================
 # CONFIG
@@ -22,59 +18,10 @@ st.image("banner.png", use_container_width=True)
 st.title("🦺 Sistema de Seguridad e Higiene")
 
 # =========================
-# GITHUB
+# NORMALIZAR
 # =========================
-def subir_a_github(ruta, nombre, contenido):
-    token = st.secrets.get("GITHUB_TOKEN", None)
-    repo = st.secrets.get("GITHUB_REPO", None)
-
-    if not token or not repo:
-        return False
-
-    url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre}"
-    contenido_base64 = base64.b64encode(contenido).decode()
-
-    headers = {"Authorization": f"token {token}"}
-
-    r = requests.put(url, json={"message": nombre, "content": contenido_base64}, headers=headers)
-
-    if r.status_code not in [200, 201]:
-        st.warning("⚠️ Error al subir a GitHub")
-
-# =========================
-# FUNCIONES GITHUB
-# =========================
-def obtener_subtipos_github(tipo):
-    token = st.secrets.get("GITHUB_TOKEN", None)
-    repo = st.secrets.get("GITHUB_REPO", None)
-
-    if not token or not repo:
-        return []
-
-    url = f"https://api.github.com/repos/{repo}/contents/documentos/registros/{tipo}"
-    headers = {"Authorization": f"token {token}"}
-
-    try:
-        r = requests.get(url, headers=headers)
-        return [i["name"] for i in r.json() if i["type"] == "dir"]
-    except:
-        return []
-
-def obtener_tipos_github():
-    token = st.secrets.get("GITHUB_TOKEN", None)
-    repo = st.secrets.get("GITHUB_REPO", None)
-
-    if not token or not repo:
-        return []
-
-    url = f"https://api.github.com/repos/{repo}/contents/documentos/registros"
-    headers = {"Authorization": f"token {token}"}
-
-    try:
-        r = requests.get(url, headers=headers)
-        return [i["name"] for i in r.json() if i["type"] == "dir"]
-    except:
-        return []
+def normalizar(txt):
+    return txt.lower().replace("_"," ").replace("-"," ").strip()
 
 # =========================
 # PDF
@@ -98,9 +45,6 @@ def generar_pdf(tipos, base_dir, reg_dir, criticos):
 
     data = [["Tipo", "Estado"]]
 
-    ok = parcial = critico_count = 0
-    colores_filas = []
-
     for tipo in tipos:
 
         base_files = []
@@ -114,40 +58,35 @@ def generar_pdf(tipos, base_dir, reg_dir, criticos):
             for _, _, files in os.walk(os.path.join(reg_dir, tipo)):
                 reg_files += [f for f in files if f.endswith(".pdf")]
 
-        estado = "OK"
+        tipo_norm = normalizar(tipo)
 
-        if tipo in criticos:
+        if tipo_norm in criticos:
+
+            req_base = ["procedimiento","permiso","checklist","emergencia","ats"]
+            req_reg = ["permiso","ats","checklist","capacitacion"]
+
+            falt_base = [r for r in req_base if not any(r in normalizar(f) for f in base_files)]
+            falt_reg = [r for r in req_reg if not any(r in normalizar(f) for f in reg_files)]
+
             if not base_files and not reg_files:
                 estado = "CRITICO"
-            elif not base_files or not reg_files:
+            elif falt_base or falt_reg:
                 estado = "PARCIAL"
+            else:
+                estado = "OK"
+
         else:
             if not base_files and not reg_files:
                 estado = "CRITICO"
             elif not base_files or not reg_files:
                 estado = "PARCIAL"
-
-        if estado == "OK":
-            ok += 1
-            color = colors.green
-        elif estado == "PARCIAL":
-            parcial += 1
-            color = colors.yellow
-        else:
-            critico_count += 1
-            color = colors.red
+            else:
+                estado = "OK"
 
         data.append([tipo.upper(), estado])
-        colores_filas.append(color)
 
     tabla = Table(data)
-
-    estilo = [("GRID", (0,0), (-1,-1), 1, colors.black)]
-
-    for i, color in enumerate(colores_filas, start=1):
-        estilo.append(("BACKGROUND", (1,i), (1,i), color))
-
-    tabla.setStyle(TableStyle(estilo))
+    tabla.setStyle(TableStyle([("GRID",(0,0),(-1,-1),1,colors.black)]))
 
     elementos.append(tabla)
     doc.build(elementos)
@@ -168,53 +107,29 @@ os.makedirs(reg_dir, exist_ok=True)
 # TIPOS
 # =========================
 tipos = []
-
 if os.path.exists(reg_dir):
     tipos += [d for d in os.listdir(reg_dir) if os.path.isdir(os.path.join(reg_dir, d))]
 
-tipos += obtener_tipos_github()
-tipos = sorted(list(set(tipos)))
-
 if not tipos:
-    st.warning("⚠️ No hay categorías cargadas")
     tipos = ["general"]
 
 # =========================
-# CARGA
-# =========================
-st.markdown("## 📤 Cargar documento")
-
-archivo = st.file_uploader("PDF", type=["pdf"])
-
-if archivo:
-    tipo = st.selectbox("Tipo", tipos)
-    subtipos = obtener_subtipos_github(tipo) or ["otros"]
-    subtipo = st.selectbox("Subtipo", subtipos)
-
-    if st.button("Guardar"):
-        ruta = os.path.join(reg_dir, tipo, subtipo)
-        os.makedirs(ruta, exist_ok=True)
-
-        with open(os.path.join(ruta, archivo.name), "wb") as f:
-            f.write(archivo.getbuffer())
-
-        subir_a_github(f"documentos/registros/{tipo}/{subtipo}", archivo.name, archivo.getbuffer())
-        st.success("✔ Guardado")
-
-# =========================
-# CONSULTA + CONTROL
+# CONSULTA
 # =========================
 st.markdown("## 🔎 Consulta")
 
 tipo_sel = st.selectbox("Seleccionar tipo", tipos)
 
+# =========================
 # BASE
+# =========================
 st.markdown("### 📄 Documentación base")
 
 base_files = []
+ruta_base = os.path.join(base_dir, tipo_sel)
 
-if os.path.exists(os.path.join(base_dir, tipo_sel)):
-    for root, _, files in os.walk(os.path.join(base_dir, tipo_sel)):
+if os.path.exists(ruta_base):
+    for root, _, files in os.walk(ruta_base):
         for f in files:
             if f.endswith(".pdf"):
                 base_files.append((f, os.path.join(root, f)))
@@ -222,59 +137,101 @@ if os.path.exists(os.path.join(base_dir, tipo_sel)):
 if base_files:
     for nombre, ruta in base_files:
         with open(ruta, "rb") as f:
-            st.download_button(nombre, f.read(), file_name=nombre)
+            st.download_button(f"📄 {nombre}", f.read(), file_name=nombre)
 else:
-    st.warning("⚠️ Sin documentación base")
+    st.warning("⚠️ No hay documentación base")
 
+# =========================
 # CONTROL BASE
+# =========================
 st.markdown("### 📋 Control documentación base")
 
 criticos = ["altura","excavacion","izaje","trabajo en caliente","espacio confinado","electricidad"]
 
-if tipo_sel in criticos:
+if normalizar(tipo_sel) in criticos:
 
     if not base_files:
         st.error("❌ No hay documentación base")
     else:
-        req = ["procedimiento","permiso","checklist","emergencia","ats"]
-        falt = [r for r in req if not any(r in f[0].lower() for f in base_files)]
+        req_base = {
+            "Procedimiento": "procedimiento",
+            "Permiso de trabajo": "permiso",
+            "Checklist": "checklist",
+            "Plan de emergencia": "emergencia",
+            "ATS": "ats"
+        }
 
-        if falt:
-            st.error(f"❌ Faltan: {', '.join(falt)}")
+        faltantes = []
+        presentes = []
+
+        for nombre, clave in req_base.items():
+            if any(clave in normalizar(f[0]) for f in base_files):
+                presentes.append(nombre)
+            else:
+                faltantes.append(nombre)
+
+        if presentes:
+            st.info("✔ Presentes: " + ", ".join(presentes))
+
+        if faltantes:
+            st.error("❌ Faltan: " + ", ".join(faltantes))
         else:
-            st.success("✔ Completo")
+            st.success("✔ Documentación base completa")
 
+# =========================
 # REGISTROS
+# =========================
 st.markdown("### 📊 Registros")
 
 reg_files = []
+ruta_reg = os.path.join(reg_dir, tipo_sel)
 
-if os.path.exists(os.path.join(reg_dir, tipo_sel)):
-    for root, _, files in os.walk(os.path.join(reg_dir, tipo_sel)):
+if os.path.exists(ruta_reg):
+    for root, _, files in os.walk(ruta_reg):
         for f in files:
             if f.endswith(".pdf"):
                 reg_files.append((f, os.path.join(root, f)))
 
+reg_files.sort(key=lambda x: os.path.getmtime(x[1]), reverse=True)
+
 if reg_files:
     for nombre, ruta in reg_files:
         with open(ruta, "rb") as f:
-            st.download_button(nombre, f.read(), file_name=nombre)
+            st.download_button(f"📊 {nombre}", f.read(), file_name=nombre)
 else:
-    st.warning("⚠️ Sin registros")
+    st.warning("⚠️ No hay registros")
 
+# =========================
 # CONTROL REGISTROS
+# =========================
 st.markdown("### 📋 Control registros")
 
-if tipo_sel in criticos:
+if normalizar(tipo_sel) in criticos:
 
     if not reg_files:
         st.error("❌ No hay registros cargados")
     else:
-        req = ["permiso","ats","checklist"]
-        falt = [r for r in req if not any(r in f[0].lower() for f in reg_files)]
+        req_reg = {
+            "Permiso firmado": "permiso",
+            "ATS": "ats",
+            "Checklist": "checklist",
+            "Capacitación": "capacitacion"
+        }
 
-        if falt:
-            st.error(f"❌ Faltan: {', '.join(falt)}")
+        faltantes = []
+        presentes = []
+
+        for nombre, clave in req_reg.items():
+            if any(clave in normalizar(f[0]) for f in reg_files):
+                presentes.append(nombre)
+            else:
+                faltantes.append(nombre)
+
+        if presentes:
+            st.info("✔ Presentes: " + ", ".join(presentes))
+
+        if faltantes:
+            st.error("❌ Faltan: " + ", ".join(faltantes))
         else:
             st.success("✔ Registros completos")
 
@@ -291,20 +248,41 @@ for tipo in tipos:
     base_files = []
     reg_files = []
 
-    if os.path.exists(os.path.join(base_dir, tipo)):
-        for _, _, files in os.walk(os.path.join(base_dir, tipo)):
+    rb = os.path.join(base_dir, tipo)
+    rr = os.path.join(reg_dir, tipo)
+
+    if os.path.exists(rb):
+        for _, _, files in os.walk(rb):
             base_files += [f for f in files if f.endswith(".pdf")]
 
-    if os.path.exists(os.path.join(reg_dir, tipo)):
-        for _, _, files in os.walk(os.path.join(reg_dir, tipo)):
+    if os.path.exists(rr):
+        for _, _, files in os.walk(rr):
             reg_files += [f for f in files if f.endswith(".pdf")]
 
-    if not base_files and not reg_files:
-        critico += 1
-    elif not base_files or not reg_files:
-        parcial += 1
+    tipo_norm = normalizar(tipo)
+
+    if tipo_norm in criticos:
+
+        req_base = ["procedimiento","permiso","checklist","emergencia","ats"]
+        req_reg = ["permiso","ats","checklist","capacitacion"]
+
+        falt_base = [r for r in req_base if not any(r in normalizar(f) for f in base_files)]
+        falt_reg = [r for r in req_reg if not any(r in normalizar(f) for f in reg_files)]
+
+        if not base_files and not reg_files:
+            critico += 1
+        elif falt_base or falt_reg:
+            parcial += 1
+        else:
+            ok += 1
+
     else:
-        ok += 1
+        if not base_files and not reg_files:
+            critico += 1
+        elif not base_files or not reg_files:
+            parcial += 1
+        else:
+            ok += 1
 
 # KPI
 c1, c2, c3, c4 = st.columns(4)
@@ -315,12 +293,10 @@ c4.metric("🔴 Crítico", critico)
 
 # TORTA
 fig, ax = plt.subplots()
-ax.pie(
-    [ok, parcial, critico],
-    labels=["OK","Parcial","Crítico"],
-    autopct="%1.0f%%",
-    colors=["#2ecc71","#f1c40f","#e74c3c"]
-)
+ax.pie([ok, parcial, critico],
+       labels=["OK","Parcial","Crítico"],
+       autopct="%1.0f%%",
+       colors=["#2ecc71","#f1c40f","#e74c3c"])
 ax.axis("equal")
 
 st.pyplot(fig)
@@ -332,4 +308,9 @@ st.markdown("### 📄 Reporte SST")
 
 pdf = generar_pdf(tipos, base_dir, reg_dir, criticos)
 
-st.download_button("📥 Descargar PDF", pdf, "reporte_sst.pdf")
+st.download_button(
+    "📥 Descargar reporte PDF",
+    data=pdf,
+    file_name="reporte_sst.pdf",
+    mime="application/pdf"
+)
