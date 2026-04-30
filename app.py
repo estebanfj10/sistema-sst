@@ -8,10 +8,39 @@ import base64
 # =========================
 st.set_page_config(page_title="Sistema SST", page_icon="🦺", layout="wide")
 
+# =========================
+# 🎨 HEADER CORPORATIVO
+# =========================
+st.markdown("""
+<style>
+.header {
+    background: linear-gradient(90deg, #0f172a, #1e3a8a);
+    padding: 20px;
+    border-radius: 10px;
+    color: white;
+    margin-bottom: 20px;
+}
+.header h1 {
+    margin: 0;
+    font-size: 32px;
+}
+.header p {
+    margin: 0;
+    font-size: 16px;
+    opacity: 0.8;
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="header">
+    <h1>🦺 Sistema SST</h1>
+    <p>Gestión de Seguridad e Higiene Laboral</p>
+</div>
+""", unsafe_allow_html=True)
+
 # 🖼️ BANNER
 st.image("banner.png", use_container_width=True)
-
-st.title("🦺 Sistema de Seguridad e Higiene")
 
 # =========================
 # NORMALIZAR
@@ -195,7 +224,7 @@ else:
     st.warning("⚠️ Sin documentación base")
 
 # =========================
-# 📊 REGISTROS (MEJORADO)
+# 📊 REGISTROS
 # =========================
 st.markdown("### 📊 Registros")
 
