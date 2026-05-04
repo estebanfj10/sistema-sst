@@ -6,9 +6,42 @@ from datetime import datetime
 from collections import defaultdict
 
 # =========================
+# LOGIN
+# =========================
+USUARIOS = {
+    "esteban": "seguridad2026"
+}
+
+def login():
+    st.markdown("## 🔐 Acceso al sistema")
+
+    user = st.text_input("Usuario").lower()
+    pwd = st.text_input("Contraseña", type="password")
+
+    if st.button("Ingresar"):
+        if user in USUARIOS and USUARIOS[user] == pwd:
+            st.session_state["login"] = True
+            st.session_state["usuario"] = user
+            st.rerun()
+        else:
+            st.error("❌ Usuario o contraseña incorrectos")
+
+if "login" not in st.session_state:
+    st.session_state["login"] = False
+
+if not st.session_state["login"]:
+    login()
+    st.stop()
+
+# =========================
 # CONFIG
 # =========================
 st.set_page_config(page_title="Sistema SST", page_icon="🦺", layout="wide")
+
+# BOTÓN LOGOUT
+if st.button("🔒 Cerrar sesión"):
+    st.session_state["login"] = False
+    st.rerun()
 
 # =========================
 # HEADER
@@ -25,10 +58,10 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("""
+st.markdown(f"""
 <div class="header">
     <h1>🦺 Sistema SST</h1>
-    <p>Gestión de Seguridad e Higiene</p>
+    <p>Usuario: {st.session_state["usuario"]}</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -187,7 +220,6 @@ REGLAS = {
 def cumple(lista, palabra):
     return any(palabra in normalizar(a) for a in lista)
 
-# 🔥 NUEVO: validación por subtipo
 def cumple_subtipo(lista, palabra):
     return any(a["subtipo"] == palabra for a in lista)
 
@@ -202,7 +234,6 @@ def evaluar_control(tipo, base, reg):
             faltantes.append(f"Base: {r}")
 
     for r in reglas["registros"]:
-        # 🔥 LÓGICA HÍBRIDA (nombre + subtipo)
         if not (cumple([a["nombre"] for a in reg], r) or cumple_subtipo(reg, r)):
             faltantes.append(f"Registro: {r}")
 
