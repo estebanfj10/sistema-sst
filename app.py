@@ -60,7 +60,7 @@ def estado_fecha(fecha):
         return "vigente"
 
 # =========================
-# CACHE GITHUB
+# CACHE API
 # =========================
 @st.cache_data(ttl=300)
 def github_api(ruta):
@@ -84,19 +84,31 @@ def obtener_base_github(ruta):
             res.append({"nombre": i["name"], "url": i["download_url"]})
     return res
 
+# 🔥 CORREGIDO (LEE SUBCARPETAS)
 @st.cache_data(ttl=300)
 def obtener_registros_github(ruta):
     res = []
+
     data = github_api(f"ventana/{ruta}")
+
     for i in data:
         if i["type"] == "file" and i["name"].endswith(".pdf"):
-            partes = i["path"].split("/")
-            sub = partes[-2] if len(partes) > 2 else "general"
             res.append({
                 "nombre": i["name"],
                 "url": i["download_url"],
-                "subtipo": sub
+                "subtipo": "general"
             })
+
+        elif i["type"] == "dir":
+            sub_data = github_api(i["path"])
+            for j in sub_data:
+                if j["type"] == "file" and j["name"].endswith(".pdf"):
+                    res.append({
+                        "nombre": j["name"],
+                        "url": j["download_url"],
+                        "subtipo": i["name"]
+                    })
+
     return res
 
 @st.cache_data(ttl=300)
@@ -239,7 +251,7 @@ if archivo:
     if st.button("Guardar"):
         if subir_a_github(ruta, archivo.name, archivo.getbuffer()):
             st.success("Subido")
-            st.cache_data.clear()  # 🔥 limpia cache
+            st.cache_data.clear()
 
 # =========================
 # CONSULTA
@@ -258,7 +270,7 @@ for i, b in enumerate(base):
 
 st.markdown("### 📊 Registros")
 for i, r in enumerate(reg):
-    st.write(f"📄 {r['nombre']}")
+    st.write(f"📄 {r['nombre']} ({r['subtipo']})")
     st.link_button("📥 Descargar", r["url"])
 
 # =========================
