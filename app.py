@@ -53,9 +53,6 @@ def subir_a_github(ruta, nombre, contenido):
     }, headers={"Authorization": f"token {token}"})
 
 
-# =========================
-# GITHUB BASE
-# =========================
 def obtener_base_github(ruta_relativa):
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
@@ -82,9 +79,6 @@ def obtener_base_github(ruta_relativa):
     return resultados
 
 
-# =========================
-# GITHUB REGISTROS
-# =========================
 def obtener_registros_github(ruta_relativa):
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
@@ -130,7 +124,7 @@ if not empresas:
     st.error("❌ No hay empresas en la carpeta 'ventana'")
     st.stop()
 
-empresa_sel = st.selectbox("Empresa", empresas)
+empresa_sel = st.selectbox("Empresa", empresas, key="empresa")
 ruta_empresa = os.path.join(base_dir, empresa_sel)
 
 # =========================
@@ -145,7 +139,7 @@ if not obras:
     st.warning("⚠️ No hay obras cargadas")
     st.stop()
 
-obra_sel = st.selectbox("Obra", obras)
+obra_sel = st.selectbox("Obra", obras, key="obra")
 
 # =========================
 # TIPOS
@@ -203,7 +197,7 @@ st.markdown("## 📤 Cargar documento")
 archivo = st.file_uploader("PDF", type=["pdf"])
 
 if archivo and tipos:
-    tipo = st.selectbox("Tipo", tipos)
+    tipo = st.selectbox("Tipo", tipos, key="tipo_carga")
     subtipo = st.text_input("Subtipo (permisos, ats, checklist)")
 
     if st.button("Guardar"):
@@ -230,7 +224,7 @@ if not tipos:
     st.warning("⚠️ No hay tipos")
     st.stop()
 
-tipo_sel = st.selectbox("Tipo", tipos)
+tipo_sel = st.selectbox("Tipo", tipos, key="tipo_consulta")
 
 # =========================
 # 📄 BASE
