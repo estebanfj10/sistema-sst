@@ -39,8 +39,8 @@ def normalizar(txt):
     return txt.lower().replace("_"," ").replace("-"," ").strip()
 
 def subir_a_github(ruta, nombre, contenido):
-    token = st.secrets.get("GITHUB_TOKEN")
-    repo = st.secrets.get("GITHUB_REPO")
+    token = st.secrets["GITHUB_TOKEN"]
+    repo = st.secrets["GITHUB_REPO"]
 
     url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre}"
     contenido_base64 = base64.b64encode(contenido).decode()
@@ -51,12 +51,9 @@ def subir_a_github(ruta, nombre, contenido):
     }, headers={"Authorization": f"token {token}"})
 
 
-# =========================
-# GITHUB BASE
-# =========================
 def obtener_base_github(ruta_relativa):
-    token = st.secrets.get("GITHUB_TOKEN")
-    repo = st.secrets.get("GITHUB_REPO")
+    token = st.secrets["GITHUB_TOKEN"]
+    repo = st.secrets["GITHUB_REPO"]
 
     resultados = []
 
@@ -78,12 +75,9 @@ def obtener_base_github(ruta_relativa):
     return resultados
 
 
-# =========================
-# GITHUB REGISTROS
-# =========================
 def obtener_registros_github(ruta_relativa):
-    token = st.secrets.get("GITHUB_TOKEN")
-    repo = st.secrets.get("GITHUB_REPO")
+    token = st.secrets["GITHUB_TOKEN"]
+    repo = st.secrets["GITHUB_REPO"]
 
     resultados = []
 
@@ -111,12 +105,9 @@ def obtener_registros_github(ruta_relativa):
     return resultados
 
 
-# =========================
-# SUBCARPETAS DINÁMICAS
-# =========================
 def obtener_subcarpetas_github(ruta_relativa):
-    token = st.secrets.get("GITHUB_TOKEN")
-    repo = st.secrets.get("GITHUB_REPO")
+    token = st.secrets["GITHUB_TOKEN"]
+    repo = st.secrets["GITHUB_REPO"]
 
     carpetas = []
 
@@ -129,7 +120,6 @@ def obtener_subcarpetas_github(ruta_relativa):
                 carpetas.append(item["name"])
 
     return sorted(carpetas)
-
 
 # =========================
 # BASE
@@ -146,34 +136,6 @@ obra_sel = st.selectbox("Obra", obras, key="obra")
 
 ruta_tipos = os.path.join(ruta_empresa, obra_sel)
 tipos = os.listdir(ruta_tipos)
-
-# =========================
-# RESUMEN
-# =========================
-st.markdown("## 📊 Resumen general")
-
-criticos = ["altura","excavacion","izaje"]
-
-ok = parcial = critico = 0
-
-for t in tipos:
-    base = obtener_base_github(f"{empresa_sel}/datos_bases/{t}")
-    reg = obtener_registros_github(f"{empresa_sel}/{obra_sel}/{t}")
-
-    base_ok = any("procedimiento" in normalizar(a["nombre"]) for a in base)
-    reg_ok = any("permiso" in normalizar(a["nombre"]) for a in reg)
-
-    if base_ok and reg_ok:
-        ok += 1
-    elif not base_ok and not reg_ok:
-        critico += 1
-    else:
-        parcial += 1
-
-c1, c2, c3 = st.columns(3)
-c1.metric("🟢 Completos", ok)
-c2.metric("🟡 Parciales", parcial)
-c3.metric("🔴 Críticos", critico)
 
 # =========================
 # CARGA
@@ -214,18 +176,52 @@ st.markdown("## 🔎 Consulta")
 
 tipo_sel = st.selectbox("Tipo", tipos, key="tipo_consulta")
 
-# BASE
-st.markdown("### 📄 Base")
+# ===== BASE =====
+st.markdown("### 📄 Documentación base")
 
 base = obtener_base_github(f"{empresa_sel}/datos_bases/{tipo_sel}")
 
-for item in base:
-    st.write(f"📄 {item['nombre']}")
+if base:
+    for item in base:
+        st.write(f"📄 {item['nombre']}")
+        r = requests.get(item["url"])
+        if r.status_code == 200:
+            st.download_button("📥 Descargar", r.content, item["nombre"], key=f"base_{item['nombre']}")
+else:
+    st.warning("⚠️ Sin base")
 
-# REGISTROS
+# ===== REGISTROS =====
 st.markdown("### 📊 Registros")
 
+subcarpetas = obtener_subcarpetas_github(f"{empresa_sel}/{obra_sel}/{tipo_sel}")
 reg = obtener_registros_github(f"{empresa_sel}/{obra_sel}/{tipo_sel}")
 
+archivos_por_sub = {}
 for item in reg:
-    st.write(f"📄 {item['nombre']} ({item['subtipo']})")
+    archivos_por_sub.setdefault(item["subtipo"], []).append(item)
+
+if subcarpetas:
+
+    for sub in subcarpetas:
+
+        st.markdown(f"#### 📂 {sub}")
+
+        archivos = archivos_por_sub.get(sub, [])
+
+        if archivos:
+            for item in archivos:
+                st.write(f"📄 {item['nombre']}")
+
+                r = requests.get(item["url"])
+                if r.status_code == 200:
+                    st.download_button(
+                        "📥 Descargar",
+                        r.content,
+                        item["nombre"],
+                        key=f"reg_{sub}_{item['nombre']}"
+                    )
+        else:
+            st.caption("Sin archivos")
+
+else:
+    st.warning("⚠️ No hay subcarpetas")
