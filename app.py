@@ -201,8 +201,8 @@ def resumen_general(emp, obra, tipos):
 # =========================
 # BASE
 # =========================
-empresa = st.selectbox("Empresa", os.listdir("ventana"))
-obra = st.selectbox("Obra", os.listdir(f"ventana/{empresa}"))
+empresa = st.selectbox("Empresa", os.listdir("ventana"), key="empresa")
+obra = st.selectbox("Obra", os.listdir(f"ventana/{empresa}"), key="obra")
 tipos = obtener_tipos_github(f"{empresa}/{obra}")
 
 # =========================
@@ -240,12 +240,12 @@ st.markdown("## 📤 Cargar documento")
 archivo = st.file_uploader("PDF", type=["pdf"])
 
 if archivo:
-    tipo = st.selectbox("Tipo", tipos)
+    tipo = st.selectbox("Tipo", tipos, key="tipo_carga")
     subs = obtener_subcarpetas_github(f"{empresa}/{obra}/{tipo}")
 
     ruta = f"ventana/{empresa}/{obra}/{tipo}"
     if subs:
-        ruta += f"/{st.selectbox('Subtipo', subs)}"
+        ruta += f"/{st.selectbox('Subtipo', subs, key='subtipo_carga')}"
 
     if st.button("Guardar"):
         if subir_a_github(ruta, archivo.name, archivo.getbuffer()):
@@ -257,7 +257,7 @@ if archivo:
 # =========================
 st.markdown("## 🔎 Consulta")
 
-tipo_sel = st.selectbox("Tipo", tipos)
+tipo_sel = st.selectbox("Tipo", tipos, key="tipo_consulta")
 
 base = obtener_base_github(f"{empresa}/datos_bases/{tipo_sel}")
 reg = obtener_registros_github(f"{empresa}/{obra}/{tipo_sel}")
@@ -267,11 +267,9 @@ for i, b in enumerate(base):
     st.write(f"📄 {b['nombre']}")
     st.link_button("📥 Descargar", b["url"])
 
-# 🔥 AGRUPADO POR SUBCARPETA
 st.markdown("### 📊 Registros")
 
 grupos = defaultdict(list)
-
 for r in reg:
     grupos[r["subtipo"]].append(r)
 
