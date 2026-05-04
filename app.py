@@ -52,7 +52,6 @@ def subir_a_github(ruta, nombre, contenido):
         "content": contenido_base64
     }, headers={"Authorization": f"token {token}"})
 
-
 def obtener_registros_github(ruta_relativa):
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
@@ -79,7 +78,6 @@ def obtener_registros_github(ruta_relativa):
     recorrer(f"ventanas/{ruta_relativa}")
     return resultados
 
-
 # =========================
 # BASE
 # =========================
@@ -87,24 +85,38 @@ base_dir = "ventanas"
 os.makedirs(base_dir, exist_ok=True)
 
 # =========================
-# EMPRESA Y OBRA
+# EMPRESAS
 # =========================
-empresas = os.listdir(base_dir)
-empresa_sel = st.selectbox("Empresa", empresas)
+empresas = [
+    d for d in os.listdir(base_dir)
+    if os.path.isdir(os.path.join(base_dir, d))
+]
 
+if not empresas:
+    st.error("❌ No hay empresas en la carpeta 'ventanas'")
+    st.stop()
+
+empresa_sel = st.selectbox("Empresa", empresas)
 ruta_empresa = os.path.join(base_dir, empresa_sel)
 
+# =========================
+# OBRAS
+# =========================
 obras = [
     d for d in os.listdir(ruta_empresa)
-    if d.startswith("registro_obra")
+    if d.startswith("registro_obra") and os.path.isdir(os.path.join(ruta_empresa, d))
 ]
+
+if not obras:
+    st.warning("⚠️ No hay obras cargadas para esta empresa")
+    st.stop()
 
 obra_sel = st.selectbox("Obra", obras)
 
 # =========================
 # TIPOS
 # =========================
-ruta_tipos = os.path.join(base_dir, empresa_sel, obra_sel)
+ruta_tipos = os.path.join(ruta_empresa, obra_sel)
 
 if os.path.exists(ruta_tipos):
     tipos = os.listdir(ruta_tipos)
@@ -166,9 +178,9 @@ st.markdown("## 📤 Cargar documento")
 
 archivo = st.file_uploader("PDF", type=["pdf"])
 
-if archivo:
+if archivo and tipos:
     tipo = st.selectbox("Tipo", tipos)
-    subtipo = st.text_input("Subtipo (ej: permisos, ats, checklist)")
+    subtipo = st.text_input("Subtipo (permisos, ats, checklist)")
 
     if st.button("Guardar"):
         ruta = os.path.join(base_dir, empresa_sel, obra_sel, tipo, subtipo)
@@ -189,6 +201,10 @@ if archivo:
 # 🔎 CONSULTA
 # =========================
 st.markdown("## 🔎 Consulta")
+
+if not tipos:
+    st.warning("⚠️ No hay tipos cargados")
+    st.stop()
 
 tipo_sel = st.selectbox("Tipo", tipos)
 
@@ -222,37 +238,27 @@ archivos_reg = []
 reg = obtener_registros_github(f"{empresa_sel}/{obra_sel}/{tipo_sel}")
 
 if reg:
-
     carpetas = {}
 
     for item in reg:
         carpetas.setdefault(item["subtipo"], []).append(item)
 
     for carpeta, archivos in carpetas.items():
-
         st.markdown(f"### 📁 {carpeta}")
 
         for item in archivos:
-
             nombre = item["nombre"]
             url = item["url"]
 
             archivos_reg.append((nombre, carpeta))
-
             st.write(f"📄 {nombre}")
 
             try:
                 r = requests.get(url)
                 if r.status_code == 200:
-                    st.download_button(
-                        "📥 Descargar",
-                        r.content,
-                        nombre,
-                        key=f"{carpeta}_{nombre}"
-                    )
+                    st.download_button("📥 Descargar", r.content, nombre)
             except:
                 st.error("Error descarga")
-
 else:
     st.warning("⚠️ Sin registros")
 
