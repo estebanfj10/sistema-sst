@@ -81,7 +81,7 @@ def obtener_registros_github(ruta_relativa):
 # =========================
 # BASE
 # =========================
-base_dir = "ventanas"
+base_dir = "ventana"
 os.makedirs(base_dir, exist_ok=True)
 
 # =========================
@@ -93,7 +93,7 @@ empresas = [
 ]
 
 if not empresas:
-    st.error("❌ No hay empresas en la carpeta 'ventanas'")
+    st.error("❌ No hay empresas en la carpeta 'ventana'")
     st.stop()
 
 empresa_sel = st.selectbox("Empresa", empresas)
