@@ -45,10 +45,24 @@ def subir_a_github(ruta, nombre, contenido):
     url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre}"
     contenido_base64 = base64.b64encode(contenido).decode()
 
-    requests.put(url, json={
-        "message": f"Subida {nombre}",
-        "content": contenido_base64
-    }, headers={"Authorization": f"token {token}"})
+    response = requests.put(
+        url,
+        json={
+            "message": f"Subida {nombre}",
+            "content": contenido_base64
+        },
+        headers={"Authorization": f"token {token}"}
+    )
+
+    if response.status_code in [200, 201]:
+        return True
+    else:
+        st.error(f"❌ Error GitHub: {response.status_code}")
+        try:
+            st.json(response.json())
+        except:
+            pass
+        return False
 
 
 def obtener_base_github(ruta_relativa):
@@ -65,7 +79,7 @@ def obtener_base_github(ruta_relativa):
             for item in r.json():
                 if item["type"] == "dir":
                     recorrer(item["path"])
-                elif item["name"].endswith(".pdf"):
+                elif item["name"].lower().endswith(".pdf"):
                     resultados.append({
                         "nombre": item["name"],
                         "url": item["download_url"]
@@ -93,7 +107,7 @@ def obtener_registros_github(ruta_relativa):
                 recorrer(item["path"])
             elif item["name"].lower().endswith(".pdf"):
                 partes = item["path"].split("/")
-                subtipo = partes[-2] if len(partes) > 2 else "otros"
+                subtipo = partes[-2] if len(partes) > 2 else "general"
 
                 resultados.append({
                     "nombre": item["name"],
@@ -151,23 +165,30 @@ if archivo:
 
     if subcarpetas:
         subtipo = st.selectbox("Subtipo", subcarpetas, key="subtipo_carga")
+        ruta_github = f"ventana/{empresa_sel}/{obra_sel}/{tipo}/{subtipo}"
+        ruta_local = os.path.join(base_dir, empresa_sel, obra_sel, tipo, subtipo)
     else:
-        subtipo = st.text_input("Nuevo subtipo")
+        st.info("📂 Este tipo no tiene subcarpetas")
+        ruta_github = f"ventana/{empresa_sel}/{obra_sel}/{tipo}"
+        ruta_local = os.path.join(base_dir, empresa_sel, obra_sel, tipo)
 
     if st.button("Guardar"):
-        ruta = os.path.join(base_dir, empresa_sel, obra_sel, tipo, subtipo)
-        os.makedirs(ruta, exist_ok=True)
 
-        with open(os.path.join(ruta, archivo.name), "wb") as f:
+        os.makedirs(ruta_local, exist_ok=True)
+
+        with open(os.path.join(ruta_local, archivo.name), "wb") as f:
             f.write(archivo.getbuffer())
 
-        subir_a_github(
-            f"ventana/{empresa_sel}/{obra_sel}/{tipo}/{subtipo}",
+        ok = subir_a_github(
+            ruta_github,
             archivo.name,
             archivo.getbuffer()
         )
 
-        st.success("✔ Guardado")
+        if ok:
+            st.success("✔ Subido correctamente")
+        else:
+            st.warning("⚠️ No se pudo subir")
 
 # =========================
 # CONSULTA
@@ -200,8 +221,24 @@ archivos_por_sub = {}
 for item in reg:
     archivos_por_sub.setdefault(item["subtipo"], []).append(item)
 
-if subcarpetas:
+# 🔹 CASO SIN SUBCARPETAS
+if not subcarpetas:
+    if reg:
+        for item in reg:
+            st.write(f"📄 {item['nombre']}")
+            r = requests.get(item["url"])
+            if r.status_code == 200:
+                st.download_button(
+                    "📥 Descargar",
+                    r.content,
+                    item["nombre"],
+                    key=f"reg_{item['nombre']}"
+                )
+    else:
+        st.warning("⚠️ Sin registros")
 
+# 🔹 CASO CON SUBCARPETAS
+else:
     for sub in subcarpetas:
 
         st.markdown(f"#### 📂 {sub}")
@@ -211,7 +248,6 @@ if subcarpetas:
         if archivos:
             for item in archivos:
                 st.write(f"📄 {item['nombre']}")
-
                 r = requests.get(item["url"])
                 if r.status_code == 200:
                     st.download_button(
@@ -222,6 +258,3 @@ if subcarpetas:
                     )
         else:
             st.caption("Sin archivos")
-
-else:
-    st.warning("⚠️ No hay subcarpetas")
