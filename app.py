@@ -187,10 +187,13 @@ REGLAS = {
 def cumple(lista, palabra):
     return any(palabra in normalizar(a) for a in lista)
 
+# 🔥 NUEVO: validación por subtipo
+def cumple_subtipo(lista, palabra):
+    return any(a["subtipo"] == palabra for a in lista)
+
 def evaluar_control(tipo, base, reg):
     reglas = REGLAS.get(tipo, REGLAS["default"])
     base_n = [a["nombre"] for a in base]
-    reg_n = [a["nombre"] for a in reg]
 
     faltantes = []
 
@@ -199,7 +202,8 @@ def evaluar_control(tipo, base, reg):
             faltantes.append(f"Base: {r}")
 
     for r in reglas["registros"]:
-        if not cumple(reg_n, r):
+        # 🔥 LÓGICA HÍBRIDA (nombre + subtipo)
+        if not (cumple([a["nombre"] for a in reg], r) or cumple_subtipo(reg, r)):
             faltantes.append(f"Registro: {r}")
 
     if not faltantes:
@@ -225,7 +229,6 @@ empresa = st.selectbox("Empresa", os.listdir("ventana"), key="empresa")
 obra = st.selectbox("Obra", os.listdir(f"ventana/{empresa}"), key="obra")
 tipos = obtener_tipos_github(f"{empresa}/{obra}")
 
-# 🔄 BOTÓN ACTUALIZAR
 if st.button("🔄 Actualizar datos"):
     st.cache_data.clear()
     st.rerun()
