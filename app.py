@@ -52,13 +52,16 @@ def obtener_fecha(nombre):
 def estado_fecha(fecha):
     if not fecha:
         return "sin_fecha"
-    dias = (fecha - datetime.now()).days
-    if dias < 0:
+
+    hoy = datetime.now()
+
+    if fecha < hoy:
         return "vencido"
-    elif dias <= 7:
+
+    if fecha.month == hoy.month and fecha.year == hoy.year:
         return "proximo"
-    else:
-        return "vigente"
+
+    return "vigente"
 
 # =========================
 # CACHE API
@@ -93,11 +96,9 @@ def obtener_base_github(ruta):
             res.append({"nombre": i["name"], "url": i["download_url"]})
     return res
 
-# 🔥 CORRECCIÓN REAL DE SUBCARPETAS
 @st.cache_data(ttl=300)
 def obtener_registros_github(ruta):
     res = []
-
     token = st.secrets["GITHUB_TOKEN"]
     repo = st.secrets["GITHUB_REPO"]
 
@@ -110,7 +111,6 @@ def obtener_registros_github(ruta):
     data = r.json()
 
     for i in data:
-        # archivos directos
         if i["type"] == "file" and i["name"].endswith(".pdf"):
             res.append({
                 "nombre": i["name"],
@@ -118,7 +118,6 @@ def obtener_registros_github(ruta):
                 "subtipo": "general"
             })
 
-        # subcarpetas
         elif i["type"] == "dir":
             sub_data = github_api_url(i["url"])
             for j in sub_data:
@@ -225,6 +224,11 @@ def resumen_general(emp, obra, tipos):
 empresa = st.selectbox("Empresa", os.listdir("ventana"), key="empresa")
 obra = st.selectbox("Obra", os.listdir(f"ventana/{empresa}"), key="obra")
 tipos = obtener_tipos_github(f"{empresa}/{obra}")
+
+# 🔄 BOTÓN ACTUALIZAR
+if st.button("🔄 Actualizar datos"):
+    st.cache_data.clear()
+    st.rerun()
 
 # =========================
 # VENCIMIENTOS
