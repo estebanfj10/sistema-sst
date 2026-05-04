@@ -3,6 +3,7 @@ import os
 import requests
 import base64
 from datetime import datetime
+from collections import defaultdict
 
 # =========================
 # CONFIG
@@ -84,11 +85,9 @@ def obtener_base_github(ruta):
             res.append({"nombre": i["name"], "url": i["download_url"]})
     return res
 
-# 🔥 CORREGIDO (LEE SUBCARPETAS)
 @st.cache_data(ttl=300)
 def obtener_registros_github(ruta):
     res = []
-
     data = github_api(f"ventana/{ruta}")
 
     for i in data:
@@ -268,10 +267,19 @@ for i, b in enumerate(base):
     st.write(f"📄 {b['nombre']}")
     st.link_button("📥 Descargar", b["url"])
 
+# 🔥 AGRUPADO POR SUBCARPETA
 st.markdown("### 📊 Registros")
-for i, r in enumerate(reg):
-    st.write(f"📄 {r['nombre']} ({r['subtipo']})")
-    st.link_button("📥 Descargar", r["url"])
+
+grupos = defaultdict(list)
+
+for r in reg:
+    grupos[r["subtipo"]].append(r)
+
+for subtipo, archivos in grupos.items():
+    st.markdown(f"#### 📁 {subtipo}")
+    for i, a in enumerate(archivos):
+        st.write(f"📄 {a['nombre']}")
+        st.link_button("📥 Descargar", a["url"], key=f"{subtipo}_{i}")
 
 # =========================
 # CONTROL
