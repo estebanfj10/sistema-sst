@@ -190,6 +190,24 @@ def evaluar_control(tipo, base, reg):
 
     return estado, faltantes
 
+
+def resumen_general(empresa_sel, obra_sel, tipos):
+    resultados = []
+
+    for tipo in tipos:
+        base = obtener_base_github(f"{empresa_sel}/datos_bases/{tipo}")
+        reg = obtener_registros_github(f"{empresa_sel}/{obra_sel}/{tipo}")
+
+        estado, faltantes = evaluar_control(tipo, base, reg)
+
+        resultados.append({
+            "tipo": tipo,
+            "estado": estado,
+            "faltantes": faltantes
+        })
+
+    return resultados
+
 # =========================
 # BASE
 # =========================
@@ -204,6 +222,27 @@ obras = [d for d in os.listdir(ruta_empresa) if d.startswith("registro_obra")]
 obra_sel = st.selectbox("Obra", obras)
 
 tipos = obtener_tipos_github(f"{empresa_sel}/{obra_sel}")
+
+# =========================
+# 📊 RESUMEN GENERAL
+# =========================
+st.markdown("## 📊 Resumen general")
+
+resumen = resumen_general(empresa_sel, obra_sel, tipos)
+
+for item in resumen:
+    tipo = item["tipo"]
+    estado = item["estado"]
+    faltantes = item["faltantes"]
+
+    if estado == "completo":
+        st.success(f"🟢 {tipo}")
+    elif estado == "parcial":
+        st.warning(f"🟡 {tipo}")
+        if faltantes:
+            st.caption(", ".join(faltantes))
+    else:
+        st.error(f"🔴 {tipo}")
 
 # =========================
 # CARGA
