@@ -146,12 +146,44 @@ def obtener_tipos_github(ruta):
     return []
 
 # =========================
-# CONTROL
+# CONTROL POR TIPO
 # =========================
 REGLAS = {
+
+    # 🔴 TAREAS CRÍTICAS
+    "altura": {
+        "base": ["procedimiento"],
+        "registros": ["permiso", "ats", "emergencia"]
+    },
+    "excavacion": {
+        "base": ["procedimiento"],
+        "registros": ["permiso", "ats", "emergencia"]
+    },
+    "demolicion": {
+        "base": ["procedimiento", "emergencia"],
+        "registros": ["permiso", "ats"]
+    },
+
+    # 🟡 CONTROL SIMPLE
+    "herramientas": {
+        "base": [],
+        "registros": ["checklist"]
+    },
+
+    # ⚪ SIN CONTROL
+    "aviso_de_obra": {
+        "base": [],
+        "registros": []
+    },
+    "accidentes": {
+        "base": [],
+        "registros": []
+    },
+
+    # DEFAULT
     "default": {
-        "base": ["procedimiento", "permiso", "ats", "emergencia"],
-        "registros": ["procedimiento", "permiso", "ats", "emergencia"]
+        "base": ["procedimiento"],
+        "registros": ["checklist"]
     }
 }
 
@@ -252,7 +284,6 @@ tipo_sel = st.selectbox("Tipo", tipos)
 base = obtener_base_github(f"{empresa}/datos_bases/{tipo_sel}")
 reg = obtener_registros_github(f"{empresa}/{obra}/{tipo_sel}")
 
-# BASE
 st.markdown("### 📄 Base")
 for i, b in enumerate(base):
     st.write(f"📄 {b['nombre']}")
@@ -260,7 +291,6 @@ for i, b in enumerate(base):
     if r.status_code == 200:
         st.download_button("📥 Descargar", r.content, b["nombre"], key=f"base_{b['nombre']}_{i}")
 
-# REGISTROS
 st.markdown("### 📊 Registros")
 for i, r in enumerate(reg):
     st.write(f"📄 {r['nombre']}")
@@ -268,7 +298,9 @@ for i, r in enumerate(reg):
     if res.status_code == 200:
         st.download_button("📥 Descargar", res.content, r["nombre"], key=f"reg_{r['nombre']}_{i}")
 
+# =========================
 # CONTROL
+# =========================
 estado, faltantes = evaluar_control(tipo_sel, base, reg)
 
 st.markdown("## 🚨 Control")
