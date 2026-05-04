@@ -153,17 +153,58 @@ def obtener_tipos_github(ruta_relativa):
     return sorted(tipos)
 
 # =========================
-# CONTROL AUTOMÁTICO
+# CONTROL AUTOMÁTICO (MEJORADO)
 # =========================
 REGLAS = {
+    "altura": {
+        "base": ["procedimiento"],
+        "registros": ["permiso", "ats", "checklist"]
+    },
+    "excavacion": {
+        "base": ["procedimiento"],
+        "registros": ["permiso", "ats", "checklist"]
+    },
+    "demolicion": {
+        "base": ["procedimiento", "emergencia"],
+        "registros": ["permiso", "ats"]
+    },
+    "herramientas": {
+        "base": [],
+        "registros": ["checklist"]
+    },
+    "aviso_de_obra": {
+        "base": [],
+        "registros": []
+    },
     "default": {
-        "base": ["procedimiento", "permiso", "ats", "emergencia"],
-        "registros": ["procedimiento", "permiso", "ats", "emergencia"]
+        "base": ["procedimiento"],
+        "registros": ["checklist"]
     }
 }
 
 def cumple(lista, palabra):
-    return any(palabra in normalizar(a) for a in lista)
+    palabra = normalizar(palabra)
+
+    for nombre in lista:
+        n = normalizar(nombre)
+
+        if palabra in n:
+            return True
+
+        if palabra == "ats" and ("ats" in n or "analisis" in n):
+            return True
+
+        if palabra == "emergencia" and "emergencia" in n:
+            return True
+
+        if palabra == "permiso" and "permiso" in n:
+            return True
+
+        if palabra == "procedimiento" and "procedimiento" in n:
+            return True
+
+    return False
+
 
 def evaluar_control(tipo, base, reg):
     reglas = REGLAS.get(tipo, REGLAS["default"])
@@ -224,25 +265,21 @@ obra_sel = st.selectbox("Obra", obras)
 tipos = obtener_tipos_github(f"{empresa_sel}/{obra_sel}")
 
 # =========================
-# 📊 RESUMEN GENERAL
+# RESUMEN GENERAL
 # =========================
 st.markdown("## 📊 Resumen general")
 
 resumen = resumen_general(empresa_sel, obra_sel, tipos)
 
 for item in resumen:
-    tipo = item["tipo"]
-    estado = item["estado"]
-    faltantes = item["faltantes"]
-
-    if estado == "completo":
-        st.success(f"🟢 {tipo}")
-    elif estado == "parcial":
-        st.warning(f"🟡 {tipo}")
-        if faltantes:
-            st.caption(", ".join(faltantes))
+    if item["estado"] == "completo":
+        st.success(f"🟢 {item['tipo']}")
+    elif item["estado"] == "parcial":
+        st.warning(f"🟡 {item['tipo']}")
+        if item["faltantes"]:
+            st.caption(", ".join(item["faltantes"]))
     else:
-        st.error(f"🔴 {tipo}")
+        st.error(f"🔴 {item['tipo']}")
 
 # =========================
 # CARGA
@@ -278,7 +315,6 @@ st.markdown("## 🔎 Consulta")
 
 tipo_sel = st.selectbox("Tipo", tipos)
 
-# BASE
 st.markdown("### 📄 Base")
 base = obtener_base_github(f"{empresa_sel}/datos_bases/{tipo_sel}")
 
@@ -288,7 +324,6 @@ if base:
 else:
     st.warning("Sin base")
 
-# REGISTROS
 st.markdown("### 📊 Registros")
 
 subcarpetas = obtener_subcarpetas_github(f"{empresa_sel}/{obra_sel}/{tipo_sel}")
