@@ -64,6 +64,14 @@ def estado_fecha(fecha):
 # CACHE API
 # =========================
 @st.cache_data(ttl=300)
+def github_api_url(url):
+    token = st.secrets["GITHUB_TOKEN"]
+    r = requests.get(url, headers={"Authorization": f"token {token}"})
+    if r.status_code == 200:
+        return r.json()
+    return []
+
+@st.cache_data(ttl=300)
 def github_api(ruta):
     token = st.secrets["GITHUB_TOKEN"]
     repo = st.secrets["GITHUB_REPO"]
@@ -85,12 +93,24 @@ def obtener_base_github(ruta):
             res.append({"nombre": i["name"], "url": i["download_url"]})
     return res
 
+# 🔥 CORRECCIÓN REAL DE SUBCARPETAS
 @st.cache_data(ttl=300)
 def obtener_registros_github(ruta):
     res = []
-    data = github_api(f"ventana/{ruta}")
+
+    token = st.secrets["GITHUB_TOKEN"]
+    repo = st.secrets["GITHUB_REPO"]
+
+    url = f"https://api.github.com/repos/{repo}/contents/ventana/{ruta}"
+    r = requests.get(url, headers={"Authorization": f"token {token}"})
+
+    if r.status_code != 200:
+        return res
+
+    data = r.json()
 
     for i in data:
+        # archivos directos
         if i["type"] == "file" and i["name"].endswith(".pdf"):
             res.append({
                 "nombre": i["name"],
@@ -98,8 +118,9 @@ def obtener_registros_github(ruta):
                 "subtipo": "general"
             })
 
+        # subcarpetas
         elif i["type"] == "dir":
-            sub_data = github_api(i["path"])
+            sub_data = github_api_url(i["url"])
             for j in sub_data:
                 if j["type"] == "file" and j["name"].endswith(".pdf"):
                     res.append({
