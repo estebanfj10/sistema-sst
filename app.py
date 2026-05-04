@@ -236,19 +236,35 @@ base = obtener_base_github(f"{empresa_sel}/datos_bases/{tipo_sel}")
 
 if base:
     for item in base:
-        nombre = item["nombre"]
-        url = item["url"]
+    nombre = item["nombre"]
+    url = item["url"]
 
-        archivos_base.append((nombre, "github"))
+    archivos_base.append((nombre, "github"))
 
-        try:
-            r = requests.get(url)
-            if r.status_code == 200:
-                st.download_button("📥 Descargar", r.content, nombre)
-        except:
-            st.error("Error descarga base")
-else:
-    st.warning("⚠️ Sin base")
+    # Iconos según tipo
+    icono = "📄"
+    if "procedimiento" in normalizar(nombre):
+        icono = "📘"
+    elif "ats" in normalizar(nombre):
+        icono = "📋"
+    elif "checklist" in normalizar(nombre):
+        icono = "✅"
+    elif "emergencia" in normalizar(nombre):
+        icono = "🚨"
+
+    st.write(f"{icono} {nombre}")
+
+    try:
+        r = requests.get(url)
+        if r.status_code == 200:
+            st.download_button(
+                "📥 Descargar",
+                r.content,
+                nombre,
+                key=f"base_{nombre}"
+            )
+    except:
+        st.error("Error descarga base")
 
 # =========================
 # 📊 REGISTROS
