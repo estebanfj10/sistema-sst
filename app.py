@@ -1,5 +1,4 @@
 import streamlit as st
-st.cache_data.clear()
 import os
 import requests
 import base64
