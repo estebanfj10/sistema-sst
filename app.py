@@ -52,31 +52,8 @@ def subir_a_github(ruta, nombre, contenido):
         "content": contenido_base64
     }, headers={"Authorization": f"token {token}"})
 
-def obtener_tipos_github():
-    token = st.secrets.get("GITHUB_TOKEN")
-    repo = st.secrets.get("GITHUB_REPO")
-    if not token or not repo:
-        return []
 
-    url = f"https://api.github.com/repos/{repo}/contents/documentos/registros"
-    r = requests.get(url, headers={"Authorization": f"token {token}"})
-    if r.status_code == 200:
-        return [i["name"] for i in r.json() if i["type"] == "dir"]
-    return []
-
-def obtener_subtipos_github(tipo):
-    token = st.secrets.get("GITHUB_TOKEN")
-    repo = st.secrets.get("GITHUB_REPO")
-    if not token or not repo:
-        return []
-
-    url = f"https://api.github.com/repos/{repo}/contents/documentos/registros/{tipo}"
-    r = requests.get(url, headers={"Authorization": f"token {token}"})
-    if r.status_code == 200:
-        return [i["name"] for i in r.json() if i["type"] == "dir"]
-    return []
-
-def obtener_registros_github(tipo):
+def obtener_registros_github(ruta_relativa):
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
 
@@ -99,25 +76,40 @@ def obtener_registros_github(tipo):
                         "subtipo": item["path"].split("/")[-2]
                     })
 
-    recorrer(f"documentos/registros/{tipo}")
+    recorrer(f"ventanas/{ruta_relativa}")
     return resultados
+
 
 # =========================
 # BASE
 # =========================
-base_dir = "documentos"
-reg_dir = os.path.join(base_dir, "registros")
-
+base_dir = "ventanas"
 os.makedirs(base_dir, exist_ok=True)
-os.makedirs(reg_dir, exist_ok=True)
+
+# =========================
+# EMPRESA Y OBRA
+# =========================
+empresas = os.listdir(base_dir)
+empresa_sel = st.selectbox("Empresa", empresas)
+
+ruta_empresa = os.path.join(base_dir, empresa_sel)
+
+obras = [
+    d for d in os.listdir(ruta_empresa)
+    if d.startswith("registro_obra")
+]
+
+obra_sel = st.selectbox("Obra", obras)
 
 # =========================
 # TIPOS
 # =========================
-tipos = list(set(
-    (os.listdir(reg_dir) if os.path.exists(reg_dir) else [])
-    + obtener_tipos_github()
-))
+ruta_tipos = os.path.join(base_dir, empresa_sel, obra_sel)
+
+if os.path.exists(ruta_tipos):
+    tipos = os.listdir(ruta_tipos)
+else:
+    tipos = []
 
 # =========================
 # 📊 RESUMEN
@@ -128,14 +120,16 @@ criticos = ["altura","excavacion","izaje","trabajo en caliente","espacio confina
 
 def evaluar_tipo_resumen(tipo):
 
+    # BASE
     archivos_base_local = []
-    ruta = os.path.join(base_dir, tipo)
+    ruta_base = os.path.join(base_dir, empresa_sel, "datos_base", tipo)
 
-    if os.path.exists(ruta):
-        for _, _, files in os.walk(ruta):
+    if os.path.exists(ruta_base):
+        for _, _, files in os.walk(ruta_base):
             archivos_base_local += files
 
-    reg = obtener_registros_github(tipo)
+    # REGISTROS
+    reg = obtener_registros_github(f"{empresa_sel}/{obra_sel}/{tipo}")
     archivos_reg_local = [r["nombre"] for r in reg]
 
     base_ok = any("procedimiento" in normalizar(a) for a in archivos_base_local)
@@ -174,17 +168,21 @@ archivo = st.file_uploader("PDF", type=["pdf"])
 
 if archivo:
     tipo = st.selectbox("Tipo", tipos)
-    sub = obtener_subtipos_github(tipo) or ["otros"]
-    subtipo = st.selectbox("Subtipo", sub)
+    subtipo = st.text_input("Subtipo (ej: permisos, ats, checklist)")
 
     if st.button("Guardar"):
-        ruta = os.path.join(reg_dir, tipo, subtipo)
+        ruta = os.path.join(base_dir, empresa_sel, obra_sel, tipo, subtipo)
         os.makedirs(ruta, exist_ok=True)
 
         with open(os.path.join(ruta, archivo.name), "wb") as f:
             f.write(archivo.getbuffer())
 
-        subir_a_github(f"documentos/registros/{tipo}/{subtipo}", archivo.name, archivo.getbuffer())
+        subir_a_github(
+            f"ventanas/{empresa_sel}/{obra_sel}/{tipo}/{subtipo}",
+            archivo.name,
+            archivo.getbuffer()
+        )
+
         st.success("✔ Guardado")
 
 # =========================
@@ -200,7 +198,7 @@ tipo_sel = st.selectbox("Tipo", tipos)
 st.markdown("### 📄 Documentación base")
 
 archivos_base = []
-ruta = os.path.join(base_dir, tipo_sel)
+ruta = os.path.join(base_dir, empresa_sel, "datos_base", tipo_sel)
 
 if os.path.exists(ruta):
     for root, _, files in os.walk(ruta):
@@ -216,12 +214,12 @@ else:
     st.warning("⚠️ Sin base")
 
 # =========================
-# 📊 REGISTROS (MEJORADO)
+# 📊 REGISTROS
 # =========================
 st.markdown("### 📊 Registros")
 
 archivos_reg = []
-reg = obtener_registros_github(tipo_sel)
+reg = obtener_registros_github(f"{empresa_sel}/{obra_sel}/{tipo_sel}")
 
 if reg:
 
@@ -241,83 +239,34 @@ if reg:
 
             archivos_reg.append((nombre, carpeta))
 
-            icono = "📄"
-            if "permiso" in normalizar(nombre):
-                icono = "📝"
-            elif "ats" in normalizar(nombre):
-                icono = "📋"
-            elif "checklist" in normalizar(nombre):
-                icono = "✅"
-            elif "capacitacion" in normalizar(nombre):
-                icono = "🎓"
-
-            st.write(f"{icono} {nombre}")
+            st.write(f"📄 {nombre}")
 
             try:
                 r = requests.get(url)
                 if r.status_code == 200:
                     st.download_button(
-                        label="📥 Descargar",
-                        data=r.content,
-                        file_name=nombre,
+                        "📥 Descargar",
+                        r.content,
+                        nombre,
                         key=f"{carpeta}_{nombre}"
                     )
             except:
-                st.error(f"Error al cargar {nombre}")
+                st.error("Error descarga")
 
 else:
     st.warning("⚠️ Sin registros")
 
 # =========================
-# 📋 CONTROL DETALLADO
+# 📋 CONTROL
 # =========================
-st.markdown("### 📋 Control documentación base")
+st.markdown("## 🚨 Estado")
 
-base_completa = False
+base_ok = any("procedimiento" in normalizar(a[0]) for a in archivos_base)
+reg_ok = any("permiso" in normalizar(a[0]) for a in archivos_reg)
 
-if tipo_sel in criticos:
-    req_base = ["procedimiento","permiso","ats","checklist","emergencia"]
-
-    faltantes_base = [
-        r for r in req_base
-        if not any(r in normalizar(a[0]) for a in archivos_base)
-    ]
-
-    if faltantes_base:
-        st.error(f"❌ Base faltante: {', '.join(faltantes_base)}")
-    else:
-        st.success("✔ Base completa")
-        base_completa = True
-
-st.markdown("### 📋 Control registros")
-
-reg_completo = False
-
-if tipo_sel in criticos:
-    req_reg = ["permiso","ats","checklist","capacitacion"]
-
-    faltantes_reg = [
-        r for r in req_reg
-        if not any(r in normalizar(a[0]) for a in archivos_reg)
-    ]
-
-    if faltantes_reg:
-        st.error(f"❌ Registros faltantes: {', '.join(faltantes_reg)}")
-    else:
-        st.success("✔ Registros completos")
-        reg_completo = True
-
-# =========================
-# 🚨 SEMÁFORO
-# =========================
-st.markdown("## 🚨 Estado general SST")
-
-if tipo_sel not in criticos:
-    st.info("ℹ️ No crítico")
+if base_ok and reg_ok:
+    st.success("🟢 COMPLETO")
+elif base_ok or reg_ok:
+    st.warning("🟡 PARCIAL")
 else:
-    if base_completa and reg_completo:
-        st.success("🟢 COMPLETO")
-    elif base_completa or reg_completo:
-        st.warning("🟡 PARCIAL")
-    else:
-        st.error("🔴 CRÍTICO")
+    st.error("🔴 CRÍTICO")
