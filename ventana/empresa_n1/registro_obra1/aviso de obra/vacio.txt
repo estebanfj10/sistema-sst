@@ -1,1 +1,0 @@
-ventana/empresa_1/registro_obra1/aviso_de_obra/permisos/.gitkeep
