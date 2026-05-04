@@ -59,6 +59,59 @@ def estado_fecha(fecha):
     else:
         return "vigente"
 
+# =========================
+# CACHE GITHUB
+# =========================
+@st.cache_data(ttl=300)
+def github_api(ruta):
+    token = st.secrets["GITHUB_TOKEN"]
+    repo = st.secrets["GITHUB_REPO"]
+    url = f"https://api.github.com/repos/{repo}/contents/{ruta}"
+    r = requests.get(url, headers={"Authorization": f"token {token}"})
+    if r.status_code == 200:
+        return r.json()
+    return []
+
+# =========================
+# GITHUB DATA
+# =========================
+@st.cache_data(ttl=300)
+def obtener_base_github(ruta):
+    res = []
+    data = github_api(f"ventana/{ruta}")
+    for i in data:
+        if i["type"] == "file" and i["name"].endswith(".pdf"):
+            res.append({"nombre": i["name"], "url": i["download_url"]})
+    return res
+
+@st.cache_data(ttl=300)
+def obtener_registros_github(ruta):
+    res = []
+    data = github_api(f"ventana/{ruta}")
+    for i in data:
+        if i["type"] == "file" and i["name"].endswith(".pdf"):
+            partes = i["path"].split("/")
+            sub = partes[-2] if len(partes) > 2 else "general"
+            res.append({
+                "nombre": i["name"],
+                "url": i["download_url"],
+                "subtipo": sub
+            })
+    return res
+
+@st.cache_data(ttl=300)
+def obtener_subcarpetas_github(ruta):
+    data = github_api(f"ventana/{ruta}")
+    return [i["name"] for i in data if i["type"] == "dir"]
+
+@st.cache_data(ttl=300)
+def obtener_tipos_github(ruta):
+    data = github_api(f"ventana/{ruta}")
+    return [i["name"] for i in data if i["type"] == "dir"]
+
+# =========================
+# ALERTAS
+# =========================
 def obtener_alertas(emp, obra, tipos):
     alertas = []
     for t in tipos:
@@ -70,6 +123,9 @@ def obtener_alertas(emp, obra, tipos):
                 alertas.append({"archivo": i["nombre"], "tipo": t, "estado": est})
     return alertas
 
+# =========================
+# SUBIR
+# =========================
 def subir_a_github(ruta, nombre, contenido):
     token = st.secrets["GITHUB_TOKEN"]
     repo = st.secrets["GITHUB_REPO"]
@@ -84,107 +140,17 @@ def subir_a_github(ruta, nombre, contenido):
     )
     return r.status_code in [200, 201]
 
-def obtener_base_github(ruta):
-    token = st.secrets["GITHUB_TOKEN"]
-    repo = st.secrets["GITHUB_REPO"]
-    res = []
-
-    def recorrer(r):
-        url = f"https://api.github.com/repos/{repo}/contents/{r}"
-        rqs = requests.get(url, headers={"Authorization": f"token {token}"})
-        if rqs.status_code == 200:
-            for i in rqs.json():
-                if i["type"] == "dir":
-                    recorrer(i["path"])
-                elif i["name"].endswith(".pdf"):
-                    res.append({"nombre": i["name"], "url": i["download_url"]})
-
-    recorrer(f"ventana/{ruta}")
-    return res
-
-def obtener_registros_github(ruta):
-    token = st.secrets["GITHUB_TOKEN"]
-    repo = st.secrets["GITHUB_REPO"]
-    res = []
-
-    def recorrer(r):
-        url = f"https://api.github.com/repos/{repo}/contents/{r}"
-        rqs = requests.get(url, headers={"Authorization": f"token {token}"})
-        if rqs.status_code != 200:
-            return
-        for i in rqs.json():
-            if i["type"] == "dir":
-                recorrer(i["path"])
-            elif i["name"].endswith(".pdf"):
-                partes = i["path"].split("/")
-                sub = partes[-2] if len(partes) > 2 else "general"
-                res.append({
-                    "nombre": i["name"],
-                    "url": i["download_url"],
-                    "subtipo": sub
-                })
-
-    recorrer(f"ventana/{ruta}")
-    return res
-
-def obtener_subcarpetas_github(ruta):
-    token = st.secrets["GITHUB_TOKEN"]
-    repo = st.secrets["GITHUB_REPO"]
-    url = f"https://api.github.com/repos/{repo}/contents/ventana/{ruta}"
-    r = requests.get(url, headers={"Authorization": f"token {token}"})
-    if r.status_code == 200:
-        return [i["name"] for i in r.json() if i["type"] == "dir"]
-    return []
-
-def obtener_tipos_github(ruta):
-    token = st.secrets["GITHUB_TOKEN"]
-    repo = st.secrets["GITHUB_REPO"]
-    url = f"https://api.github.com/repos/{repo}/contents/ventana/{ruta}"
-    r = requests.get(url, headers={"Authorization": f"token {token}"})
-    if r.status_code == 200:
-        return [i["name"] for i in r.json() if i["type"] == "dir"]
-    return []
-
 # =========================
-# CONTROL POR TIPO
+# CONTROL
 # =========================
 REGLAS = {
-
-    # 🔴 TAREAS CRÍTICAS
-    "altura": {
-        "base": ["procedimiento"],
-        "registros": ["permiso", "ats", "emergencia"]
-    },
-    "excavacion": {
-        "base": ["procedimiento"],
-        "registros": ["permiso", "ats", "emergencia"]
-    },
-    "demolicion": {
-        "base": ["procedimiento", "emergencia"],
-        "registros": ["permiso", "ats"]
-    },
-
-    # 🟡 CONTROL SIMPLE
-    "herramientas": {
-        "base": [],
-        "registros": ["checklist"]
-    },
-
-    # ⚪ SIN CONTROL
-    "aviso_de_obra": {
-        "base": [],
-        "registros": []
-    },
-    "accidentes": {
-        "base": [],
-        "registros": []
-    },
-
-    # DEFAULT
-    "default": {
-        "base": ["procedimiento"],
-        "registros": ["checklist"]
-    }
+    "altura": {"base": ["procedimiento"], "registros": ["permiso", "ats", "emergencia"]},
+    "excavacion": {"base": ["procedimiento"], "registros": ["permiso", "ats", "emergencia"]},
+    "demolicion": {"base": ["procedimiento", "emergencia"], "registros": ["permiso", "ats"]},
+    "herramientas": {"base": [], "registros": ["checklist"]},
+    "aviso_de_obra": {"base": [], "registros": []},
+    "accidentes": {"base": [], "registros": []},
+    "default": {"base": ["procedimiento"], "registros": ["checklist"]}
 }
 
 def cumple(lista, palabra):
@@ -273,9 +239,10 @@ if archivo:
     if st.button("Guardar"):
         if subir_a_github(ruta, archivo.name, archivo.getbuffer()):
             st.success("Subido")
+            st.cache_data.clear()  # 🔥 limpia cache
 
 # =========================
-# CONSULTA + DESCARGA
+# CONSULTA
 # =========================
 st.markdown("## 🔎 Consulta")
 
@@ -287,16 +254,12 @@ reg = obtener_registros_github(f"{empresa}/{obra}/{tipo_sel}")
 st.markdown("### 📄 Base")
 for i, b in enumerate(base):
     st.write(f"📄 {b['nombre']}")
-    r = requests.get(b["url"])
-    if r.status_code == 200:
-        st.download_button("📥 Descargar", r.content, b["nombre"], key=f"base_{b['nombre']}_{i}")
+    st.link_button("📥 Descargar", b["url"])
 
 st.markdown("### 📊 Registros")
 for i, r in enumerate(reg):
     st.write(f"📄 {r['nombre']}")
-    res = requests.get(r["url"])
-    if res.status_code == 200:
-        st.download_button("📥 Descargar", res.content, r["nombre"], key=f"reg_{r['nombre']}_{i}")
+    st.link_button("📥 Descargar", r["url"])
 
 # =========================
 # CONTROL
