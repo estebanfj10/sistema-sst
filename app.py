@@ -135,6 +135,25 @@ def obtener_subcarpetas_github(ruta_relativa):
 
     return sorted(carpetas)
 
+
+# 🟢 NUEVO: TIPOS DESDE GITHUB
+def obtener_tipos_github(ruta_relativa):
+    token = st.secrets["GITHUB_TOKEN"]
+    repo = st.secrets["GITHUB_REPO"]
+
+    tipos = []
+
+    url = f"https://api.github.com/repos/{repo}/contents/ventana/{ruta_relativa}"
+    r = requests.get(url, headers={"Authorization": f"token {token}"})
+
+    if r.status_code == 200:
+        for item in r.json():
+            if item["type"] == "dir":
+                tipos.append(item["name"])
+
+    return sorted(tipos)
+
+
 # =========================
 # BASE
 # =========================
@@ -148,8 +167,8 @@ ruta_empresa = os.path.join(base_dir, empresa_sel)
 obras = [d for d in os.listdir(ruta_empresa) if d.startswith("registro_obra")]
 obra_sel = st.selectbox("Obra", obras, key="obra")
 
-ruta_tipos = os.path.join(ruta_empresa, obra_sel)
-tipos = os.listdir(ruta_tipos)
+# 🔴 CAMBIO IMPORTANTE
+tipos = obtener_tipos_github(f"{empresa_sel}/{obra_sel}")
 
 # =========================
 # CARGA
@@ -166,18 +185,11 @@ if archivo:
     if subcarpetas:
         subtipo = st.selectbox("Subtipo", subcarpetas, key="subtipo_carga")
         ruta_github = f"ventana/{empresa_sel}/{obra_sel}/{tipo}/{subtipo}"
-        ruta_local = os.path.join(base_dir, empresa_sel, obra_sel, tipo, subtipo)
     else:
         st.info("📂 Este tipo no tiene subcarpetas")
         ruta_github = f"ventana/{empresa_sel}/{obra_sel}/{tipo}"
-        ruta_local = os.path.join(base_dir, empresa_sel, obra_sel, tipo)
 
     if st.button("Guardar"):
-
-        os.makedirs(ruta_local, exist_ok=True)
-
-        with open(os.path.join(ruta_local, archivo.name), "wb") as f:
-            f.write(archivo.getbuffer())
 
         ok = subir_a_github(
             ruta_github,
@@ -197,7 +209,7 @@ st.markdown("## 🔎 Consulta")
 
 tipo_sel = st.selectbox("Tipo", tipos, key="tipo_consulta")
 
-# ===== BASE =====
+# BASE
 st.markdown("### 📄 Documentación base")
 
 base = obtener_base_github(f"{empresa_sel}/datos_bases/{tipo_sel}")
@@ -211,7 +223,7 @@ if base:
 else:
     st.warning("⚠️ Sin base")
 
-# ===== REGISTROS =====
+# REGISTROS
 st.markdown("### 📊 Registros")
 
 subcarpetas = obtener_subcarpetas_github(f"{empresa_sel}/{obra_sel}/{tipo_sel}")
@@ -221,26 +233,17 @@ archivos_por_sub = {}
 for item in reg:
     archivos_por_sub.setdefault(item["subtipo"], []).append(item)
 
-# 🔹 CASO SIN SUBCARPETAS
 if not subcarpetas:
     if reg:
         for item in reg:
             st.write(f"📄 {item['nombre']}")
             r = requests.get(item["url"])
             if r.status_code == 200:
-                st.download_button(
-                    "📥 Descargar",
-                    r.content,
-                    item["nombre"],
-                    key=f"reg_{item['nombre']}"
-                )
+                st.download_button("📥 Descargar", r.content, item["nombre"], key=f"reg_{item['nombre']}")
     else:
         st.warning("⚠️ Sin registros")
-
-# 🔹 CASO CON SUBCARPETAS
 else:
     for sub in subcarpetas:
-
         st.markdown(f"#### 📂 {sub}")
 
         archivos = archivos_por_sub.get(sub, [])
