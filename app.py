@@ -2,7 +2,6 @@ import streamlit as st
 import os
 import requests
 import base64
-from datetime import datetime
 
 # =========================
 # CONFIG
@@ -39,26 +38,6 @@ st.image("banner.png", use_container_width=True)
 def normalizar(txt):
     return txt.lower().replace("_"," ").replace("-"," ").strip()
 
-def obtener_fecha(nombre):
-    try:
-        partes = nombre.replace(".pdf", "").split("_")
-        for p in partes:
-            if "-" in p:
-                return datetime.strptime(p, "%d-%m-%Y")
-    except:
-        return None
-
-def estado_fecha(fecha):
-    if not fecha:
-        return "sin_fecha"
-    dias = (fecha - datetime.now()).days
-    if dias < 0:
-        return "vencido"
-    elif dias <= 7:
-        return "proximo"
-    else:
-        return "vigente"
-
 def subir_a_github(ruta, nombre, contenido):
     token = st.secrets["GITHUB_TOKEN"]
     repo = st.secrets["GITHUB_REPO"]
@@ -66,76 +45,115 @@ def subir_a_github(ruta, nombre, contenido):
     url = f"https://api.github.com/repos/{repo}/contents/{ruta}/{nombre}"
     contenido_base64 = base64.b64encode(contenido).decode()
 
-    r = requests.put(
+    response = requests.put(
         url,
-        json={"message": f"Subida {nombre}", "content": contenido_base64},
+        json={
+            "message": f"Subida {nombre}",
+            "content": contenido_base64
+        },
         headers={"Authorization": f"token {token}"}
     )
-    return r.status_code in [200, 201]
 
-def obtener_base_github(ruta):
+    if response.status_code in [200, 201]:
+        return True
+    else:
+        st.error(f"❌ Error GitHub: {response.status_code}")
+        try:
+            st.json(response.json())
+        except:
+            pass
+        return False
+
+
+def obtener_base_github(ruta_relativa):
     token = st.secrets["GITHUB_TOKEN"]
     repo = st.secrets["GITHUB_REPO"]
-    res = []
 
-    def recorrer(r):
-        url = f"https://api.github.com/repos/{repo}/contents/{r}"
-        rqs = requests.get(url, headers={"Authorization": f"token {token}"})
-        if rqs.status_code == 200:
-            for i in rqs.json():
-                if i["type"] == "dir":
-                    recorrer(i["path"])
-                elif i["name"].endswith(".pdf"):
-                    res.append({"nombre": i["name"], "url": i["download_url"]})
+    resultados = []
 
-    recorrer(f"ventana/{ruta}")
-    return res
+    def recorrer(ruta):
+        url = f"https://api.github.com/repos/{repo}/contents/{ruta}"
+        r = requests.get(url, headers={"Authorization": f"token {token}"})
 
-def obtener_registros_github(ruta):
+        if r.status_code == 200:
+            for item in r.json():
+                if item["type"] == "dir":
+                    recorrer(item["path"])
+                elif item["name"].lower().endswith(".pdf"):
+                    resultados.append({
+                        "nombre": item["name"],
+                        "url": item["download_url"]
+                    })
+
+    recorrer(f"ventana/{ruta_relativa}")
+    return resultados
+
+
+def obtener_registros_github(ruta_relativa):
     token = st.secrets["GITHUB_TOKEN"]
     repo = st.secrets["GITHUB_REPO"]
-    res = []
 
-    def recorrer(r):
-        url = f"https://api.github.com/repos/{repo}/contents/{r}"
-        rqs = requests.get(url, headers={"Authorization": f"token {token}"})
-        if rqs.status_code != 200:
+    resultados = []
+
+    def recorrer(ruta):
+        url = f"https://api.github.com/repos/{repo}/contents/{ruta}"
+        r = requests.get(url, headers={"Authorization": f"token {token}"})
+
+        if r.status_code != 200:
             return
-        for i in rqs.json():
-            if i["type"] == "dir":
-                recorrer(i["path"])
-            elif i["name"].endswith(".pdf"):
-                partes = i["path"].split("/")
-                sub = partes[-2] if len(partes) > 2 else "general"
-                res.append({
-                    "nombre": i["name"],
-                    "url": i["download_url"],
-                    "subtipo": sub
+
+        for item in r.json():
+            if item["type"] == "dir":
+                recorrer(item["path"])
+            elif item["name"].lower().endswith(".pdf"):
+                partes = item["path"].split("/")
+                subtipo = partes[-2] if len(partes) > 2 else "general"
+
+                resultados.append({
+                    "nombre": item["name"],
+                    "url": item["download_url"],
+                    "subtipo": subtipo
                 })
 
-    recorrer(f"ventana/{ruta}")
-    return res
+    recorrer(f"ventana/{ruta_relativa}")
+    return resultados
 
-def obtener_subcarpetas_github(ruta):
+
+def obtener_subcarpetas_github(ruta_relativa):
     token = st.secrets["GITHUB_TOKEN"]
     repo = st.secrets["GITHUB_REPO"]
-    url = f"https://api.github.com/repos/{repo}/contents/ventana/{ruta}"
-    r = requests.get(url, headers={"Authorization": f"token {token}"})
-    if r.status_code == 200:
-        return [i["name"] for i in r.json() if i["type"] == "dir"]
-    return []
 
-def obtener_tipos_github(ruta):
+    carpetas = []
+
+    url = f"https://api.github.com/repos/{repo}/contents/ventana/{ruta_relativa}"
+    r = requests.get(url, headers={"Authorization": f"token {token}"})
+
+    if r.status_code == 200:
+        for item in r.json():
+            if item["type"] == "dir":
+                carpetas.append(item["name"])
+
+    return sorted(carpetas)
+
+
+def obtener_tipos_github(ruta_relativa):
     token = st.secrets["GITHUB_TOKEN"]
     repo = st.secrets["GITHUB_REPO"]
-    url = f"https://api.github.com/repos/{repo}/contents/ventana/{ruta}"
+
+    tipos = []
+
+    url = f"https://api.github.com/repos/{repo}/contents/ventana/{ruta_relativa}"
     r = requests.get(url, headers={"Authorization": f"token {token}"})
+
     if r.status_code == 200:
-        return [i["name"] for i in r.json() if i["type"] == "dir"]
-    return []
+        for item in r.json():
+            if item["type"] == "dir":
+                tipos.append(item["name"])
+
+    return sorted(tipos)
 
 # =========================
-# CONTROL
+# CONTROL AUTOMÁTICO
 # =========================
 REGLAS = {
     "default": {
@@ -149,93 +167,95 @@ def cumple(lista, palabra):
 
 def evaluar_control(tipo, base, reg):
     reglas = REGLAS.get(tipo, REGLAS["default"])
-    base_n = [a["nombre"] for a in base]
-    reg_n = [a["nombre"] for a in reg]
+
+    base_nombres = [a["nombre"] for a in base]
+    reg_nombres = [a["nombre"] for a in reg]
 
     faltantes = []
 
     for r in reglas["base"]:
-        if not cumple(base_n, r):
+        if not cumple(base_nombres, r):
             faltantes.append(f"Base: {r}")
 
     for r in reglas["registros"]:
-        if not cumple(reg_n, r):
+        if not cumple(reg_nombres, r):
             faltantes.append(f"Registro: {r}")
 
     if not faltantes:
-        return "completo", faltantes
+        estado = "completo"
     elif len(faltantes) == len(reglas["base"]) + len(reglas["registros"]):
-        return "critico", faltantes
+        estado = "critico"
     else:
-        return "parcial", faltantes
+        estado = "parcial"
 
-def resumen_general(emp, obra, tipos):
-    data = []
-    for t in tipos:
-        base = obtener_base_github(f"{emp}/datos_bases/{t}")
-        reg = obtener_registros_github(f"{emp}/{obra}/{t}")
-        estado, faltantes = evaluar_control(t, base, reg)
-        data.append({"tipo": t, "estado": estado, "faltantes": faltantes})
-    return data
+    return estado, faltantes
 
-def obtener_alertas(emp, obra, tipos):
-    alertas = []
-    for t in tipos:
-        reg = obtener_registros_github(f"{emp}/{obra}/{t}")
-        for i in reg:
-            f = obtener_fecha(i["nombre"])
-            est = estado_fecha(f)
-            if est in ["vencido", "proximo"]:
-                alertas.append({"archivo": i["nombre"], "tipo": t, "estado": est})
-    return alertas
+# =========================
+# NUEVO: RESUMEN GENERAL
+# =========================
+def resumen_general(empresa_sel, obra_sel, tipos):
+    resultados = []
+
+    for tipo in tipos:
+        base = obtener_base_github(f"{empresa_sel}/datos_bases/{tipo}")
+        reg = obtener_registros_github(f"{empresa_sel}/{obra_sel}/{tipo}")
+
+        estado, faltantes = evaluar_control(tipo, base, reg)
+
+        resultados.append({
+            "tipo": tipo,
+            "estado": estado,
+            "faltantes": faltantes
+        })
+
+    return resultados
 
 # =========================
 # BASE
 # =========================
-empresa = st.selectbox("Empresa", os.listdir("ventana"))
-obra = st.selectbox("Obra", os.listdir(f"ventana/{empresa}"))
-tipos = obtener_tipos_github(f"{empresa}/{obra}")
+base_dir = "ventana"
+
+empresas = [d for d in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, d))]
+empresa_sel = st.selectbox("Empresa", empresas)
+
+ruta_empresa = os.path.join(base_dir, empresa_sel)
+
+obras = [d for d in os.listdir(ruta_empresa) if d.startswith("registro_obra")]
+obra_sel = st.selectbox("Obra", obras)
+
+tipos = obtener_tipos_github(f"{empresa_sel}/{obra_sel}")
 
 # =========================
-# 🚨 VENCIMIENTOS
-# =========================
-alertas = obtener_alertas(empresa, obra, tipos)
-vencidos = [a for a in alertas if a["estado"] == "vencido"]
-proximos = [a for a in alertas if a["estado"] == "proximo"]
-
-if vencidos:
-    st.markdown("## 🚨 Documentos vencidos")
-
-    c1, c2 = st.columns(2)
-    c1.metric("🔴 Vencidos", len(vencidos))
-    c2.metric("🟡 Próximos", len(proximos))
-
-    for a in vencidos:
-        st.error(f"🔴 {a['archivo']} ({a['tipo']})")
-
-with st.expander("📅 Ver todos los vencimientos"):
-    if alertas:
-        for a in alertas:
-            if a["estado"] == "vencido":
-                st.error(f"🔴 {a['archivo']} ({a['tipo']})")
-            else:
-                st.warning(f"🟡 {a['archivo']} ({a['tipo']})")
-    else:
-        st.success("Sin vencimientos")
-
-# =========================
-# 📊 RESUMEN
+# 📊 RESUMEN GENERAL
 # =========================
 with st.expander("📊 Ver resumen general"):
-    resumen = resumen_general(empresa, obra, tipos)
 
-    for r in resumen:
-        if r["estado"] == "completo":
-            st.success(f"🟢 {r['tipo']}")
+    resumen = resumen_general(empresa_sel, obra_sel, tipos)
+
+    total_c = sum(1 for x in resumen if x["estado"] == "completo")
+    total_p = sum(1 for x in resumen if x["estado"] == "parcial")
+    total_cr = sum(1 for x in resumen if x["estado"] == "critico")
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("🟢 Completos", total_c)
+    col2.metric("🟡 Parciales", total_p)
+    col3.metric("🔴 Críticos", total_cr)
+
+    for item in resumen:
+        tipo = item["tipo"]
+        estado = item["estado"]
+        faltantes = item["faltantes"]
+
+        if estado == "completo":
+            st.success(f"🟢 {tipo}")
         else:
-            with st.expander(f"{r['estado']} - {r['tipo']}"):
-                for f in r["faltantes"]:
-                    st.write(f"❌ {f}")
+            icono = "🟡" if estado == "parcial" else "🔴"
+
+            with st.expander(f"{icono} {tipo}"):
+                if faltantes:
+                    st.markdown("**Faltantes:**")
+                    for f in faltantes:
+                        st.write(f"❌ {f}")
 
 # =========================
 # CARGA
@@ -246,35 +266,76 @@ archivo = st.file_uploader("PDF", type=["pdf"])
 
 if archivo:
     tipo = st.selectbox("Tipo", tipos)
-    subs = obtener_subcarpetas_github(f"{empresa}/{obra}/{tipo}")
 
-    ruta = f"ventana/{empresa}/{obra}/{tipo}"
-    if subs:
-        ruta += f"/{st.selectbox('Subtipo', subs)}"
+    subcarpetas = obtener_subcarpetas_github(f"{empresa_sel}/{obra_sel}/{tipo}")
+
+    if subcarpetas:
+        subtipo = st.selectbox("Subtipo", subcarpetas)
+        ruta_github = f"ventana/{empresa_sel}/{obra_sel}/{tipo}/{subtipo}"
+    else:
+        st.info("📂 Sin subcarpetas")
+        ruta_github = f"ventana/{empresa_sel}/{obra_sel}/{tipo}"
 
     if st.button("Guardar"):
-        if subir_a_github(ruta, archivo.name, archivo.getbuffer()):
-            st.success("Subido")
+        ok = subir_a_github(ruta_github, archivo.name, archivo.getbuffer())
+
+        if ok:
+            st.success("✔ Subido correctamente")
+        else:
+            st.warning("⚠️ Error al subir")
 
 # =========================
-# CONSULTA + CONTROL
+# CONSULTA
 # =========================
 st.markdown("## 🔎 Consulta")
 
 tipo_sel = st.selectbox("Tipo", tipos)
 
-base = obtener_base_github(f"{empresa}/datos_bases/{tipo_sel}")
-reg = obtener_registros_github(f"{empresa}/{obra}/{tipo_sel}")
+# BASE
+st.markdown("### 📄 Base")
+base = obtener_base_github(f"{empresa_sel}/datos_bases/{tipo_sel}")
 
-for b in base:
-    st.write(b["nombre"])
+if base:
+    for item in base:
+        st.write(f"📄 {item['nombre']}")
+else:
+    st.warning("Sin base")
 
-for r in reg:
-    st.write(r["nombre"])
+# REGISTROS
+st.markdown("### 📊 Registros")
+
+subcarpetas = obtener_subcarpetas_github(f"{empresa_sel}/{obra_sel}/{tipo_sel}")
+reg = obtener_registros_github(f"{empresa_sel}/{obra_sel}/{tipo_sel}")
+
+if not subcarpetas:
+    for item in reg:
+        st.write(f"📄 {item['nombre']}")
+else:
+    for sub in subcarpetas:
+        st.markdown(f"#### 📂 {sub}")
+        archivos = [a for a in reg if a["subtipo"] == sub]
+
+        if archivos:
+            for item in archivos:
+                st.write(f"📄 {item['nombre']}")
+        else:
+            st.caption("Sin archivos")
+
+# =========================
+# CONTROL
+# =========================
+st.markdown("## 🚨 Control de cumplimiento")
 
 estado, faltantes = evaluar_control(tipo_sel, base, reg)
 
-st.write("Estado:", estado)
+if estado == "completo":
+    st.success("🟢 COMPLETO")
+elif estado == "parcial":
+    st.warning("🟡 PARCIAL")
+else:
+    st.error("🔴 CRÍTICO")
 
-for f in faltantes:
-    st.write("❌", f)
+if faltantes:
+    st.markdown("### Faltantes")
+    for f in faltantes:
+        st.write(f"❌ {f}")
