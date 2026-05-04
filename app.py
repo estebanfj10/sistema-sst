@@ -165,8 +165,7 @@ st.markdown("## 📊 Resumen general")
 criticos = ["altura","excavacion","izaje","trabajo en caliente","espacio confinado","electricidad"]
 
 def evaluar_tipo_resumen(tipo):
-
-    base = obtener_base_github(f"{empresa_sel}/datos_base/{tipo}")
+    base = obtener_base_github(f"{empresa_sel}/datos_bases/{tipo}")
     reg = obtener_registros_github(f"{empresa_sel}/{obra_sel}/{tipo}")
 
     base_ok = any("procedimiento" in normalizar(a["nombre"]) for a in base)
@@ -234,12 +233,12 @@ if not tipos:
 tipo_sel = st.selectbox("Tipo", tipos)
 
 # =========================
-# 📄 BASE (GITHUB)
+# 📄 BASE
 # =========================
 st.markdown("### 📄 Documentación base")
 
 archivos_base = []
-base = obtener_base_github(f"{empresa_sel}/datos_base/{tipo_sel}")
+base = obtener_base_github(f"{empresa_sel}/datos_bases/{tipo_sel}")
 
 if base:
     for item in base:
