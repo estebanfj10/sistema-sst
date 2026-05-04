@@ -136,7 +136,6 @@ def obtener_subcarpetas_github(ruta_relativa):
     return sorted(carpetas)
 
 
-# 🟢 NUEVO: TIPOS DESDE GITHUB
 def obtener_tipos_github(ruta_relativa):
     token = st.secrets["GITHUB_TOKEN"]
     repo = st.secrets["GITHUB_REPO"]
@@ -153,6 +152,43 @@ def obtener_tipos_github(ruta_relativa):
 
     return sorted(tipos)
 
+# =========================
+# CONTROL AUTOMÁTICO
+# =========================
+REGLAS = {
+    "default": {
+        "base": ["procedimiento", "permiso", "ats", "emergencia"],
+        "registros": ["procedimiento", "permiso", "ats", "emergencia"]
+    }
+}
+
+def cumple(lista, palabra):
+    return any(palabra in normalizar(a) for a in lista)
+
+def evaluar_control(tipo, base, reg):
+    reglas = REGLAS.get(tipo, REGLAS["default"])
+
+    base_nombres = [a["nombre"] for a in base]
+    reg_nombres = [a["nombre"] for a in reg]
+
+    faltantes = []
+
+    for r in reglas["base"]:
+        if not cumple(base_nombres, r):
+            faltantes.append(f"Base: {r}")
+
+    for r in reglas["registros"]:
+        if not cumple(reg_nombres, r):
+            faltantes.append(f"Registro: {r}")
+
+    if not faltantes:
+        estado = "completo"
+    elif len(faltantes) == len(reglas["base"]) + len(reglas["registros"]):
+        estado = "critico"
+    else:
+        estado = "parcial"
+
+    return estado, faltantes
 
 # =========================
 # BASE
@@ -160,14 +196,13 @@ def obtener_tipos_github(ruta_relativa):
 base_dir = "ventana"
 
 empresas = [d for d in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, d))]
-empresa_sel = st.selectbox("Empresa", empresas, key="empresa")
+empresa_sel = st.selectbox("Empresa", empresas)
 
 ruta_empresa = os.path.join(base_dir, empresa_sel)
 
 obras = [d for d in os.listdir(ruta_empresa) if d.startswith("registro_obra")]
-obra_sel = st.selectbox("Obra", obras, key="obra")
+obra_sel = st.selectbox("Obra", obras)
 
-# 🔴 CAMBIO IMPORTANTE
 tipos = obtener_tipos_github(f"{empresa_sel}/{obra_sel}")
 
 # =========================
@@ -178,50 +213,41 @@ st.markdown("## 📤 Cargar documento")
 archivo = st.file_uploader("PDF", type=["pdf"])
 
 if archivo:
-    tipo = st.selectbox("Tipo", tipos, key="tipo_carga")
+    tipo = st.selectbox("Tipo", tipos)
 
     subcarpetas = obtener_subcarpetas_github(f"{empresa_sel}/{obra_sel}/{tipo}")
 
     if subcarpetas:
-        subtipo = st.selectbox("Subtipo", subcarpetas, key="subtipo_carga")
+        subtipo = st.selectbox("Subtipo", subcarpetas)
         ruta_github = f"ventana/{empresa_sel}/{obra_sel}/{tipo}/{subtipo}"
     else:
-        st.info("📂 Este tipo no tiene subcarpetas")
+        st.info("📂 Sin subcarpetas")
         ruta_github = f"ventana/{empresa_sel}/{obra_sel}/{tipo}"
 
     if st.button("Guardar"):
-
-        ok = subir_a_github(
-            ruta_github,
-            archivo.name,
-            archivo.getbuffer()
-        )
+        ok = subir_a_github(ruta_github, archivo.name, archivo.getbuffer())
 
         if ok:
             st.success("✔ Subido correctamente")
         else:
-            st.warning("⚠️ No se pudo subir")
+            st.warning("⚠️ Error al subir")
 
 # =========================
 # CONSULTA
 # =========================
 st.markdown("## 🔎 Consulta")
 
-tipo_sel = st.selectbox("Tipo", tipos, key="tipo_consulta")
+tipo_sel = st.selectbox("Tipo", tipos)
 
 # BASE
-st.markdown("### 📄 Documentación base")
-
+st.markdown("### 📄 Base")
 base = obtener_base_github(f"{empresa_sel}/datos_bases/{tipo_sel}")
 
 if base:
     for item in base:
         st.write(f"📄 {item['nombre']}")
-        r = requests.get(item["url"])
-        if r.status_code == 200:
-            st.download_button("📥 Descargar", r.content, item["nombre"], key=f"base_{item['nombre']}")
 else:
-    st.warning("⚠️ Sin base")
+    st.warning("Sin base")
 
 # REGISTROS
 st.markdown("### 📊 Registros")
@@ -229,35 +255,35 @@ st.markdown("### 📊 Registros")
 subcarpetas = obtener_subcarpetas_github(f"{empresa_sel}/{obra_sel}/{tipo_sel}")
 reg = obtener_registros_github(f"{empresa_sel}/{obra_sel}/{tipo_sel}")
 
-archivos_por_sub = {}
-for item in reg:
-    archivos_por_sub.setdefault(item["subtipo"], []).append(item)
-
 if not subcarpetas:
-    if reg:
-        for item in reg:
-            st.write(f"📄 {item['nombre']}")
-            r = requests.get(item["url"])
-            if r.status_code == 200:
-                st.download_button("📥 Descargar", r.content, item["nombre"], key=f"reg_{item['nombre']}")
-    else:
-        st.warning("⚠️ Sin registros")
+    for item in reg:
+        st.write(f"📄 {item['nombre']}")
 else:
     for sub in subcarpetas:
         st.markdown(f"#### 📂 {sub}")
-
-        archivos = archivos_por_sub.get(sub, [])
+        archivos = [a for a in reg if a["subtipo"] == sub]
 
         if archivos:
             for item in archivos:
                 st.write(f"📄 {item['nombre']}")
-                r = requests.get(item["url"])
-                if r.status_code == 200:
-                    st.download_button(
-                        "📥 Descargar",
-                        r.content,
-                        item["nombre"],
-                        key=f"reg_{sub}_{item['nombre']}"
-                    )
         else:
             st.caption("Sin archivos")
+
+# =========================
+# CONTROL
+# =========================
+st.markdown("## 🚨 Control de cumplimiento")
+
+estado, faltantes = evaluar_control(tipo_sel, base, reg)
+
+if estado == "completo":
+    st.success("🟢 COMPLETO")
+elif estado == "parcial":
+    st.warning("🟡 PARCIAL")
+else:
+    st.error("🔴 CRÍTICO")
+
+if faltantes:
+    st.markdown("### Faltantes")
+    for f in faltantes:
+        st.write(f"❌ {f}")
