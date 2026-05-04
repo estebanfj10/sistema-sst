@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import requests
 import base64
+from datetime import datetime
 
 # =========================
 # CONFIG
@@ -37,6 +38,47 @@ st.image("banner.png", use_container_width=True)
 # =========================
 def normalizar(txt):
     return txt.lower().replace("_"," ").replace("-"," ").strip()
+
+def obtener_fecha(nombre):
+    try:
+        partes = nombre.replace(".pdf", "").split("_")
+        for p in partes:
+            if "-" in p:
+                return datetime.strptime(p, "%d-%m-%Y")
+    except:
+        return None
+
+def estado_fecha(fecha):
+    if not fecha:
+        return "sin_fecha"
+
+    dias = (fecha - datetime.now()).days
+
+    if dias < 0:
+        return "vencido"
+    elif dias <= 7:
+        return "proximo"
+    else:
+        return "vigente"
+
+def obtener_alertas(empresa, obra, tipos):
+    alertas = []
+
+    for tipo in tipos:
+        reg = obtener_registros_github(f"{empresa}/{obra}/{tipo}")
+
+        for item in reg:
+            fecha = obtener_fecha(item["nombre"])
+            estado = estado_fecha(fecha)
+
+            if estado in ["vencido", "proximo"]:
+                alertas.append({
+                    "archivo": item["nombre"],
+                    "tipo": tipo,
+                    "estado": estado
+                })
+
+    return alertas
 
 def subir_a_github(ruta, nombre, contenido):
     token = st.secrets["GITHUB_TOKEN"]
@@ -226,10 +268,32 @@ obra_sel = st.selectbox("Obra", obras)
 tipos = obtener_tipos_github(f"{empresa_sel}/{obra_sel}")
 
 # =========================
+# 📅 VENCIMIENTOS (NUEVO)
+# =========================
+with st.expander("📅 Ver vencimientos"):
+
+    alertas = obtener_alertas(empresa_sel, obra_sel, tipos)
+
+    if alertas:
+        vencidos = [a for a in alertas if a["estado"] == "vencido"]
+        proximos = [a for a in alertas if a["estado"] == "proximo"]
+
+        col1, col2 = st.columns(2)
+        col1.metric("🔴 Vencidos", len(vencidos))
+        col2.metric("🟡 Próximos", len(proximos))
+
+        for a in alertas:
+            if a["estado"] == "vencido":
+                st.error(f"🔴 {a['archivo']} ({a['tipo']})")
+            else:
+                st.warning(f"🟡 {a['archivo']} ({a['tipo']})")
+    else:
+        st.success("🟢 No hay vencimientos")
+
+# =========================
 # 📊 RESUMEN GENERAL
 # =========================
 with st.expander("📊 Ver resumen general"):
-
     resumen = resumen_general(empresa_sel, obra_sel, tipos)
 
     total_c = sum(1 for x in resumen if x["estado"] == "completo")
@@ -242,23 +306,15 @@ with st.expander("📊 Ver resumen general"):
     col3.metric("🔴 Críticos", total_cr)
 
     for item in resumen:
-        tipo = item["tipo"]
-        estado = item["estado"]
-        faltantes = item["faltantes"]
-
-        if estado == "completo":
-            st.success(f"🟢 {tipo}")
+        if item["estado"] == "completo":
+            st.success(f"🟢 {item['tipo']}")
         else:
-            icono = "🟡" if estado == "parcial" else "🔴"
-
-            with st.expander(f"{icono} {tipo}"):
-                if faltantes:
-                    st.markdown("**Faltantes:**")
-                    for f in faltantes:
-                        st.write(f"❌ {f}")
+            with st.expander(f"{item['estado']} - {item['tipo']}"):
+                for f in item["faltantes"]:
+                    st.write(f"❌ {f}")
 
 # =========================
-# CARGA
+# RESTO DEL CÓDIGO (IGUAL)
 # =========================
 st.markdown("## 📤 Cargar documento")
 
@@ -284,14 +340,10 @@ if archivo:
         else:
             st.warning("⚠️ Error al subir")
 
-# =========================
-# CONSULTA
-# =========================
 st.markdown("## 🔎 Consulta")
 
 tipo_sel = st.selectbox("Tipo", tipos)
 
-# BASE
 st.markdown("### 📄 Base")
 base = obtener_base_github(f"{empresa_sel}/datos_bases/{tipo_sel}")
 
@@ -301,7 +353,6 @@ if base:
 else:
     st.warning("Sin base")
 
-# REGISTROS
 st.markdown("### 📊 Registros")
 
 subcarpetas = obtener_subcarpetas_github(f"{empresa_sel}/{obra_sel}/{tipo_sel}")
@@ -321,9 +372,6 @@ else:
         else:
             st.caption("Sin archivos")
 
-# =========================
-# CONTROL
-# =========================
 st.markdown("## 🚨 Control de cumplimiento")
 
 estado, faltantes = evaluar_control(tipo_sel, base, reg)
