@@ -197,7 +197,7 @@ obra = st.selectbox("Obra", os.listdir(f"ventana/{empresa}"))
 tipos = obtener_tipos_github(f"{empresa}/{obra}")
 
 # =========================
-# 📅 VENCIMIENTOS
+# VENCIMIENTOS
 # =========================
 with st.expander("📅 Ver vencimientos"):
     alertas = obtener_alertas(empresa, obra, tipos)
@@ -211,7 +211,7 @@ with st.expander("📅 Ver vencimientos"):
         st.success("Sin vencimientos")
 
 # =========================
-# 📊 RESUMEN
+# RESUMEN
 # =========================
 with st.expander("📊 Ver resumen general"):
     resumen = resumen_general(empresa, obra, tipos)
@@ -254,19 +254,19 @@ reg = obtener_registros_github(f"{empresa}/{obra}/{tipo_sel}")
 
 # BASE
 st.markdown("### 📄 Base")
-for b in base:
+for i, b in enumerate(base):
     st.write(f"📄 {b['nombre']}")
     r = requests.get(b["url"])
     if r.status_code == 200:
-        st.download_button("📥 Descargar", r.content, b["nombre"], key=f"base_{b['nombre']}")
+        st.download_button("📥 Descargar", r.content, b["nombre"], key=f"base_{b['nombre']}_{i}")
 
 # REGISTROS
 st.markdown("### 📊 Registros")
-for r in reg:
+for i, r in enumerate(reg):
     st.write(f"📄 {r['nombre']}")
     res = requests.get(r["url"])
     if res.status_code == 200:
-        st.download_button("📥 Descargar", res.content, r["nombre"], key=f"reg_{r['nombre']}")
+        st.download_button("📥 Descargar", res.content, r["nombre"], key=f"reg_{r['nombre']}_{i}")
 
 # CONTROL
 estado, faltantes = evaluar_control(tipo_sel, base, reg)
