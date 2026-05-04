@@ -52,6 +52,39 @@ def subir_a_github(ruta, nombre, contenido):
         "content": contenido_base64
     }, headers={"Authorization": f"token {token}"})
 
+
+# =========================
+# GITHUB BASE
+# =========================
+def obtener_base_github(ruta_relativa):
+    token = st.secrets.get("GITHUB_TOKEN")
+    repo = st.secrets.get("GITHUB_REPO")
+
+    resultados = []
+    if not token or not repo:
+        return resultados
+
+    def recorrer(ruta):
+        url = f"https://api.github.com/repos/{repo}/contents/{ruta}"
+        r = requests.get(url, headers={"Authorization": f"token {token}"})
+
+        if r.status_code == 200:
+            for item in r.json():
+                if item["type"] == "dir":
+                    recorrer(item["path"])
+                elif item["name"].endswith(".pdf"):
+                    resultados.append({
+                        "nombre": item["name"],
+                        "url": item["download_url"]
+                    })
+
+    recorrer(f"ventana/{ruta_relativa}")
+    return resultados
+
+
+# =========================
+# GITHUB REGISTROS
+# =========================
 def obtener_registros_github(ruta_relativa):
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
@@ -75,8 +108,9 @@ def obtener_registros_github(ruta_relativa):
                         "subtipo": item["path"].split("/")[-2]
                     })
 
-    recorrer(f"ventanas/{ruta_relativa}")
+    recorrer(f"ventana/{ruta_relativa}")
     return resultados
+
 
 # =========================
 # BASE
@@ -108,7 +142,7 @@ obras = [
 ]
 
 if not obras:
-    st.warning("⚠️ No hay obras cargadas para esta empresa")
+    st.warning("⚠️ No hay obras cargadas")
     st.stop()
 
 obra_sel = st.selectbox("Obra", obras)
@@ -132,20 +166,11 @@ criticos = ["altura","excavacion","izaje","trabajo en caliente","espacio confina
 
 def evaluar_tipo_resumen(tipo):
 
-    # BASE
-    archivos_base_local = []
-    ruta_base = os.path.join(base_dir, empresa_sel, "datos_base", tipo)
-
-    if os.path.exists(ruta_base):
-        for _, _, files in os.walk(ruta_base):
-            archivos_base_local += files
-
-    # REGISTROS
+    base = obtener_base_github(f"{empresa_sel}/datos_base/{tipo}")
     reg = obtener_registros_github(f"{empresa_sel}/{obra_sel}/{tipo}")
-    archivos_reg_local = [r["nombre"] for r in reg]
 
-    base_ok = any("procedimiento" in normalizar(a) for a in archivos_base_local)
-    reg_ok = any("permiso" in normalizar(a) for a in archivos_reg_local)
+    base_ok = any("procedimiento" in normalizar(a["nombre"]) for a in base)
+    reg_ok = any("permiso" in normalizar(a["nombre"]) for a in reg)
 
     if base_ok and reg_ok:
         return "ok"
@@ -190,7 +215,7 @@ if archivo and tipos:
             f.write(archivo.getbuffer())
 
         subir_a_github(
-            f"ventanas/{empresa_sel}/{obra_sel}/{tipo}/{subtipo}",
+            f"ventana/{empresa_sel}/{obra_sel}/{tipo}/{subtipo}",
             archivo.name,
             archivo.getbuffer()
         )
@@ -203,29 +228,32 @@ if archivo and tipos:
 st.markdown("## 🔎 Consulta")
 
 if not tipos:
-    st.warning("⚠️ No hay tipos cargados")
+    st.warning("⚠️ No hay tipos")
     st.stop()
 
 tipo_sel = st.selectbox("Tipo", tipos)
 
 # =========================
-# 📄 BASE
+# 📄 BASE (GITHUB)
 # =========================
 st.markdown("### 📄 Documentación base")
 
 archivos_base = []
-ruta = os.path.join(base_dir, empresa_sel, "datos_base", tipo_sel)
+base = obtener_base_github(f"{empresa_sel}/datos_base/{tipo_sel}")
 
-if os.path.exists(ruta):
-    for root, _, files in os.walk(ruta):
-        for f in files:
-            if f.endswith(".pdf"):
-                archivos_base.append((f, os.path.join(root, f)))
+if base:
+    for item in base:
+        nombre = item["nombre"]
+        url = item["url"]
 
-if archivos_base:
-    for n, r in archivos_base:
-        with open(r, "rb") as f:
-            st.download_button(n, f, n)
+        archivos_base.append((nombre, "github"))
+
+        try:
+            r = requests.get(url)
+            if r.status_code == 200:
+                st.download_button("📥 Descargar", r.content, nombre)
+        except:
+            st.error("Error descarga base")
 else:
     st.warning("⚠️ Sin base")
 
@@ -259,6 +287,7 @@ if reg:
                     st.download_button("📥 Descargar", r.content, nombre)
             except:
                 st.error("Error descarga")
+
 else:
     st.warning("⚠️ Sin registros")
 
