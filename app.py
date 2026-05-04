@@ -53,7 +53,6 @@ def subir_a_github(ruta, nombre, contenido):
 
     return response.status_code in [200, 201]
 
-
 def obtener_base_github(ruta_relativa):
     token = st.secrets["GITHUB_TOKEN"]
     repo = st.secrets["GITHUB_REPO"]
@@ -74,7 +73,6 @@ def obtener_base_github(ruta_relativa):
     recorrer(f"ventana/{ruta_relativa}")
     return resultados
 
-
 def obtener_registros_github(ruta_relativa):
     token = st.secrets["GITHUB_TOKEN"]
     repo = st.secrets["GITHUB_REPO"]
@@ -94,11 +92,14 @@ def obtener_registros_github(ruta_relativa):
             elif item["name"].lower().endswith(".pdf"):
                 partes = item["path"].split("/")
                 subtipo = partes[-2] if len(partes) > 2 else "general"
-                resultados.append({"nombre": item["name"], "subtipo": subtipo})
+                resultados.append({
+                    "nombre": item["name"],
+                    "url": item["download_url"],
+                    "subtipo": subtipo
+                })
 
     recorrer(f"ventana/{ruta_relativa}")
     return resultados
-
 
 def obtener_subcarpetas_github(ruta_relativa):
     token = st.secrets["GITHUB_TOKEN"]
@@ -109,9 +110,7 @@ def obtener_subcarpetas_github(ruta_relativa):
 
     if r.status_code == 200:
         return sorted([i["name"] for i in r.json() if i["type"] == "dir"])
-
     return []
-
 
 def obtener_tipos_github(ruta_relativa):
     token = st.secrets["GITHUB_TOKEN"]
@@ -122,11 +121,10 @@ def obtener_tipos_github(ruta_relativa):
 
     if r.status_code == 200:
         return sorted([i["name"] for i in r.json() if i["type"] == "dir"])
-
     return []
 
 # =========================
-# CONTROL
+# CONTROL POR TIPO
 # =========================
 REGLAS = {
     "altura": {"base": ["procedimiento"], "registros": ["permiso", "ats", "checklist"]},
@@ -163,7 +161,6 @@ def evaluar_control(tipo, base, reg):
     else:
         return "parcial", faltantes
 
-
 def resumen_general(empresa, obra, tipos):
     data = []
     for t in tipos:
@@ -190,14 +187,14 @@ with st.expander("📊 Ver resumen general"):
 
     resumen = resumen_general(empresa, obra, tipos)
 
-    total_c = sum(1 for x in resumen if x["estado"] == "completo")
-    total_p = sum(1 for x in resumen if x["estado"] == "parcial")
-    total_cr = sum(1 for x in resumen if x["estado"] == "critico")
+    c = sum(1 for x in resumen if x["estado"] == "completo")
+    p = sum(1 for x in resumen if x["estado"] == "parcial")
+    cr = sum(1 for x in resumen if x["estado"] == "critico")
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("🟢 Completos", total_c)
-    col2.metric("🟡 Parciales", total_p)
-    col3.metric("🔴 Críticos", total_cr)
+    col1.metric("🟢 Completos", c)
+    col2.metric("🟡 Parciales", p)
+    col3.metric("🔴 Críticos", cr)
 
     for item in resumen:
         if item["estado"] == "completo":
@@ -208,7 +205,7 @@ with st.expander("📊 Ver resumen general"):
                     st.write(f"❌ {f}")
 
 # =========================
-# RESTO (CARGA / CONSULTA)
+# CARGA
 # =========================
 st.markdown("## 📤 Cargar documento")
 
@@ -228,4 +225,40 @@ if archivo:
         if subir_a_github(ruta, archivo.name, archivo.getbuffer()):
             st.success("✔ Subido correctamente")
 
-# CONSULTA + CONTROL igual que antes (sin cambios)
+# =========================
+# CONSULTA + CONTROL
+# =========================
+st.markdown("## 🔎 Consulta")
+
+tipo_sel = st.selectbox("Tipo", tipos)
+
+base = obtener_base_github(f"{empresa}/datos_bases/{tipo_sel}")
+reg = obtener_registros_github(f"{empresa}/{obra}/{tipo_sel}")
+
+st.markdown("### 📄 Base")
+if base:
+    for item in base:
+        st.write(item["name"])
+        r = requests.get(item["download_url"])
+        if r.status_code == 200:
+            st.download_button("Descargar", r.content, item["name"])
+else:
+    st.warning("Sin base")
+
+st.markdown("### 📊 Registros")
+for item in reg:
+    st.write(item["nombre"])
+
+# CONTROL
+st.markdown("## 🚨 Control")
+estado, faltantes = evaluar_control(tipo_sel, base, reg)
+
+if estado == "completo":
+    st.success("🟢 COMPLETO")
+elif estado == "parcial":
+    st.warning("🟡 PARCIAL")
+else:
+    st.error("🔴 CRÍTICO")
+
+for f in faltantes:
+    st.write(f"❌ {f}")
