@@ -155,23 +155,22 @@ def estado_fecha(fecha):
 # =========================
 # API GITHUB
 # =========================
-def gh_headers():
-    return {"Authorization": f"token {st.secrets['GITHUB_TOKEN']}"}
-
-def gh_repo():
-    return st.secrets["GITHUB_REPO"]
+# Token y repo se leen UNA sola vez fuera de las funciones cacheadas
+GH_TOKEN = st.secrets["GITHUB_TOKEN"]
+GH_REPO  = st.secrets["GITHUB_REPO"]
+GH_HEADERS = {"Authorization": f"token {GH_TOKEN}"}
 
 @st.cache_data(ttl=300)
 def github_api(ruta):
-    url = f"https://api.github.com/repos/{gh_repo()}/contents/{ruta}"
-    r   = requests.get(url, headers=gh_headers())
+    url = f"https://api.github.com/repos/{GH_REPO}/contents/{ruta}"
+    r   = requests.get(url, headers=GH_HEADERS)
     if r.status_code == 200:
         return r.json()
     return []
 
 @st.cache_data(ttl=300)
 def github_api_url(url):
-    r = requests.get(url, headers=gh_headers())
+    r = requests.get(url, headers=GH_HEADERS)
     if r.status_code == 200:
         return r.json()
     return []
@@ -305,12 +304,12 @@ def resumen_general(empresa, obra, tipos):
 # SUBIR
 # =========================
 def subir_a_github(ruta_completa, nombre, contenido):
-    url = f"https://api.github.com/repos/{gh_repo()}/contents/{ruta_completa}/{nombre}"
+    url = f"https://api.github.com/repos/{GH_REPO}/contents/{ruta_completa}/{nombre}"
     b64 = base64.b64encode(contenido).decode()
     r   = requests.put(
         url,
         json={"message": f"Subida: {nombre}", "content": b64},
-        headers=gh_headers()
+        headers=GH_HEADERS
     )
     return r.status_code in [200, 201]
 
