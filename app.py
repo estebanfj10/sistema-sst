@@ -262,15 +262,23 @@ def obtener_empresas_github():
 @st.cache_data(ttl=300)
 def obtener_obras_github(empresa):
     data = github_api(f"ventana/{empresa}")
-    return [i["name"] for i in data if i["type"] == "dir" and i["name"] != "datos_bases"]
+    # Excluir la carpeta de bases (puede llamarse base_de_datos o datos_bases)
+    excluir = {"base_de_datos", "datos_bases"}
+    return [i["name"] for i in data if i["type"] == "dir" and i["name"] not in excluir]
 
 @st.cache_data(ttl=300)
 def obtener_base_github(ruta):
+    """ruta = empresa/base_de_datos/tipo"""
     res  = []
     data = github_api(f"ventana/{ruta}")
     for i in data:
         if i["type"] == "file" and i["name"].endswith(".pdf"):
             res.append({"nombre": i["name"], "url": i["download_url"]})
+        elif i["type"] == "dir":
+            # subcarpetas dentro del tipo base
+            for j in github_api_url(i["url"]):
+                if j["type"] == "file" and j["name"].endswith(".pdf"):
+                    res.append({"nombre": j["name"], "url": j["download_url"]})
     return res
 
 @st.cache_data(ttl=300)
@@ -297,9 +305,22 @@ def obtener_subcarpetas_github(ruta):
     return [i["name"] for i in data if i["type"] == "dir"]
 
 @st.cache_data(ttl=300)
-def obtener_tipos_github(ruta):
-    data = github_api(f"ventana/{ruta}")
-    return [i["name"] for i in data if i["type"] == "dir"]
+def obtener_tipos_github(empresa):
+    """Lee los tipos desde base_de_datos (fuente de verdad de la empresa)."""
+    for carpeta_base in ["base_de_datos", "datos_bases"]:
+        data = github_api(f"ventana/{empresa}/{carpeta_base}")
+        if data:
+            return [i["name"] for i in data if i["type"] == "dir"]
+    return []
+
+@st.cache_data(ttl=300)
+def nombre_carpeta_base(empresa):
+    """Devuelve el nombre real de la carpeta base ('base_de_datos' o 'datos_bases')."""
+    data = github_api(f"ventana/{empresa}")
+    for i in data:
+        if i["type"] == "dir" and i["name"] in ["base_de_datos", "datos_bases"]:
+            return i["name"]
+    return "base_de_datos"
 
 # =========================
 # SUBIR
@@ -368,9 +389,10 @@ def evaluar_control(tipo, base, reg):
         return "parcial", faltantes
 
 def resumen_general(emp, obra, tipos):
+    carpeta_base = nombre_carpeta_base(emp)
     data = []
     for t in tipos:
-        base  = obtener_base_github(f"{emp}/datos_bases/{t}")
+        base  = obtener_base_github(f"{emp}/{carpeta_base}/{t}")
         reg   = obtener_registros_github(f"{emp}/{obra}/{t}")
         estado, faltantes = evaluar_control(t, base, reg)
         data.append({"tipo": t, "estado": estado, "faltantes": faltantes})
@@ -427,7 +449,8 @@ with st.sidebar:
 # =========================
 # HEADER PRINCIPAL
 # =========================
-tipos = obtener_tipos_github(f"{empresa}/{obra}")
+tipos         = obtener_tipos_github(empresa)
+carpeta_base  = nombre_carpeta_base(empresa)
 
 st.markdown(f"""
 <div class="main-header">
@@ -532,7 +555,7 @@ elif seccion == "🔎 Consulta":
 
     tipo_sel = st.selectbox("Seleccioná el tipo", tipos, key="tipo_consulta")
 
-    base = obtener_base_github(f"{empresa}/datos_bases/{tipo_sel}")
+    base = obtener_base_github(f"{empresa}/{carpeta_base}/{tipo_sel}")
     reg  = obtener_registros_github(f"{empresa}/{obra}/{tipo_sel}")
 
     col1, col2 = st.columns(2)
