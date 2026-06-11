@@ -159,7 +159,14 @@ def estado_fecha(fecha):
 GH_TOKEN = st.secrets["GITHUB_TOKEN"]
 GH_REPO  = st.secrets["GITHUB_REPO"]
 GH_HEADERS = {"Authorization": f"token {GH_TOKEN}"}
-
+# DEBUG - borrar después
+r_test = requests.get(
+    f"https://api.github.com/repos/{GH_REPO}/contents/ventana",
+    headers=GH_HEADERS
+)
+st.write("Status:", r_test.status_code)
+st.write("Respuesta:", r_test.json())
+st.stop()
 @st.cache_data(ttl=300)
 def github_api(ruta):
     url = f"https://api.github.com/repos/{GH_REPO}/contents/{ruta}"
