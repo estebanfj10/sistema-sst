@@ -160,9 +160,6 @@ GH_TOKEN = st.secrets["GITHUB_TOKEN"]
 GH_REPO  = st.secrets["GITHUB_REPO"]
 GH_HEADERS = {"Authorization": f"token {GH_TOKEN}"}
 
-st.write("Status:", r_test.status_code)
-st.write("Respuesta:", r_test.json())
-st.stop()
 @st.cache_data(ttl=300)
 def github_api(ruta):
     url = f"https://api.github.com/repos/{GH_REPO}/contents/{ruta}"
