@@ -324,6 +324,85 @@ def crear_carpeta_github(ruta_completa):
     """
     return subir_a_github(ruta_completa, ".gitkeep", b"")
 
+def listar_archivos_recursivo(ruta):
+    """
+    Lista (sin caché) todos los archivos dentro de una ruta, recorriendo
+    subcarpetas. Devuelve una lista de paths completos (strings).
+    Se usa para renombrar/eliminar, por eso NO está cacheada: necesita
+    datos frescos (sha correcto) en el momento de la operación.
+    """
+    archivos = []
+    r = requests.get(f"https://api.github.com/repos/{GH_REPO}/contents/{ruta}", headers=GH_HEADERS)
+    if r.status_code != 200:
+        return archivos
+    data = r.json()
+    if not isinstance(data, list):
+        return archivos
+    for item in data:
+        if item["type"] == "file":
+            archivos.append(item["path"])
+        elif item["type"] == "dir":
+            archivos.extend(listar_archivos_recursivo(item["path"]))
+    return archivos
+
+def renombrar_carpeta_github(ruta_vieja, ruta_nueva):
+    """
+    GitHub no soporta 'mover' carpetas: se recrea cada archivo en la
+    ruta nueva y se borra de la ruta vieja.
+    """
+    archivos = listar_archivos_recursivo(ruta_vieja)
+    if not archivos:
+        return False, "La carpeta está vacía o no existe."
+    errores = 0
+    for path_viejo in archivos:
+        r = requests.get(f"https://api.github.com/repos/{GH_REPO}/contents/{path_viejo}", headers=GH_HEADERS)
+        if r.status_code != 200:
+            errores += 1
+            continue
+        info = r.json()
+        path_nuevo = ruta_nueva + path_viejo[len(ruta_vieja):]
+        put = requests.put(
+            f"https://api.github.com/repos/{GH_REPO}/contents/{path_nuevo}",
+            json={"message": f"Renombrar: {path_viejo} -> {path_nuevo}", "content": info["content"]},
+            headers=GH_HEADERS
+        )
+        if put.status_code not in (200, 201):
+            errores += 1
+            continue
+        d = requests.delete(
+            f"https://api.github.com/repos/{GH_REPO}/contents/{path_viejo}",
+            json={"message": f"Eliminado tras renombrar: {path_viejo}", "sha": info["sha"]},
+            headers=GH_HEADERS
+        )
+        if d.status_code not in (200, 204):
+            errores += 1
+    if errores:
+        return False, f"{len(archivos) - errores}/{len(archivos)} archivos movidos, {errores} con error."
+    return True, f"{len(archivos)} archivo(s) movidos correctamente."
+
+def eliminar_carpeta_github(ruta):
+    """Elimina todos los archivos dentro de una ruta (equivale a borrar la carpeta)."""
+    archivos = listar_archivos_recursivo(ruta)
+    if not archivos:
+        return False, "La carpeta está vacía o no existe."
+    errores = 0
+    for path in archivos:
+        r = requests.get(f"https://api.github.com/repos/{GH_REPO}/contents/{path}", headers=GH_HEADERS)
+        if r.status_code != 200:
+            errores += 1
+            continue
+        sha = r.json()["sha"]
+        d = requests.delete(
+            f"https://api.github.com/repos/{GH_REPO}/contents/{path}",
+            json={"message": f"Eliminado: {path}", "sha": sha},
+            headers=GH_HEADERS
+        )
+        if d.status_code not in (200, 204):
+            errores += 1
+    if errores:
+        return False, f"{len(archivos) - errores}/{len(archivos)} archivos eliminados, {errores} con error."
+    return True, f"{len(archivos)} archivo(s) eliminados correctamente."
+
 def limpiar_nombre(nombre):
     """Normaliza un nombre para usarlo como carpeta (sin espacios ni tildes)."""
     reemplazos = {
@@ -699,7 +778,9 @@ elif seccion == "⚙️ Gestionar carpetas":
         </p>
     </div>""", unsafe_allow_html=True)
 
-    tab1, tab2, tab3, tab4 = st.tabs(["🏢 Empresa", "🏗️ Obra", "📁 Tipo", "📂 Subtipo"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        ["🏢 Empresa", "🏗️ Obra", "📁 Tipo", "📂 Subtipo", "✏️ Modificar / Eliminar"]
+    )
 
     # --- Nueva empresa ---
     with tab1:
@@ -721,7 +802,8 @@ elif seccion == "⚙️ Gestionar carpetas":
     # --- Nueva obra ---
     with tab2:
         st.markdown("#### Crear nueva obra")
-        st.caption(f"Se creará dentro de la empresa: **{empresa}**")
+        st.caption("Elegí a qué empresa (ya existente) se le agrega la obra.")
+        empresa_obra = st.selectbox("Empresa", empresas, key="empresa_destino_obra")
         nombre_obra = st.text_input("Nombre de la obra", key="in_obra")
         if st.button("➕ Crear obra", key="btn_obra"):
             if not nombre_obra:
@@ -729,9 +811,9 @@ elif seccion == "⚙️ Gestionar carpetas":
             else:
                 slug = limpiar_nombre(nombre_obra)
                 with st.spinner("Creando..."):
-                    ok = crear_carpeta_github(f"ventana/{empresa}/{slug}")
+                    ok = crear_carpeta_github(f"ventana/{empresa_obra}/{slug}")
                 if ok:
-                    st.success(f"✅ Obra '{slug}' creada en {empresa}")
+                    st.success(f"✅ Obra '{slug}' creada en {empresa_obra}")
                     st.cache_data.clear()
                 else:
                     st.error("❌ No se pudo crear (¿ya existe?)")
@@ -739,9 +821,12 @@ elif seccion == "⚙️ Gestionar carpetas":
     # --- Nuevo tipo ---
     with tab3:
         st.markdown("#### Crear nuevo tipo de registro")
+        st.caption("Elegí en qué empresa y en qué carpeta (base documental u obra, ambas ya existentes) va el tipo.")
+        empresa_tipo = st.selectbox("Empresa", empresas, key="empresa_destino_tipo")
+        obras_tipo = obtener_obras(empresa_tipo)
         destino_tipo = st.selectbox(
             "¿Dónde va este tipo?",
-            [f"📚 Base documental ({CARPETA_BASES})"] + [f"🏗️ Obra: {o}" for o in obras],
+            [f"📚 Base documental ({CARPETA_BASES})"] + [f"🏗️ Obra: {o}" for o in obras_tipo],
             key="destino_tipo"
         )
         nombre_tipo = st.text_input("Nombre del tipo (ej: altura, excavacion)", key="in_tipo")
@@ -751,10 +836,10 @@ elif seccion == "⚙️ Gestionar carpetas":
             else:
                 slug = limpiar_nombre(nombre_tipo)
                 if destino_tipo.startswith("📚"):
-                    ruta_padre = f"ventana/{empresa}/{CARPETA_BASES}"
+                    ruta_padre = f"ventana/{empresa_tipo}/{CARPETA_BASES}"
                 else:
                     obra_destino = destino_tipo.replace("🏗️ Obra: ", "")
-                    ruta_padre = f"ventana/{empresa}/{obra_destino}"
+                    ruta_padre = f"ventana/{empresa_tipo}/{obra_destino}"
                 with st.spinner("Creando..."):
                     ok = crear_carpeta_github(f"{ruta_padre}/{slug}")
                 if ok:
@@ -768,17 +853,19 @@ elif seccion == "⚙️ Gestionar carpetas":
     # --- Nuevo subtipo ---
     with tab4:
         st.markdown("#### Crear nuevo subtipo")
-        st.caption("Un subtipo es una subcarpeta dentro de un tipo (ej: dentro de 'altura' → 'permiso', 'ats').")
+        st.caption("Un subtipo es una subcarpeta dentro de un tipo ya existente (ej: dentro de 'altura' → 'permiso', 'ats').")
+        empresa_subtipo = st.selectbox("Empresa", empresas, key="empresa_destino_subtipo")
+        obras_subtipo = obtener_obras(empresa_subtipo)
         origen_subtipo = st.selectbox(
             "¿Dentro de qué carpeta va?",
-            [f"📚 Base documental ({CARPETA_BASES})"] + [f"🏗️ Obra: {o}" for o in obras],
+            [f"📚 Base documental ({CARPETA_BASES})"] + [f"🏗️ Obra: {o}" for o in obras_subtipo],
             key="origen_subtipo"
         )
         if origen_subtipo.startswith("📚"):
-            ruta_base_subtipo = f"ventana/{empresa}/{CARPETA_BASES}"
+            ruta_base_subtipo = f"ventana/{empresa_subtipo}/{CARPETA_BASES}"
         else:
             obra_sel_subtipo = origen_subtipo.replace("🏗️ Obra: ", "")
-            ruta_base_subtipo = f"ventana/{empresa}/{obra_sel_subtipo}"
+            ruta_base_subtipo = f"ventana/{empresa_subtipo}/{obra_sel_subtipo}"
 
         tipos_disponibles = obtener_tipos(ruta_base_subtipo)
         if not tipos_disponibles:
@@ -798,6 +885,119 @@ elif seccion == "⚙️ Gestionar carpetas":
                         st.cache_data.clear()
                     else:
                         st.error("❌ No se pudo crear (¿ya existe?)")
+
+    # --- Modificar / Eliminar ---
+    with tab5:
+        st.markdown("#### ✏️ Renombrar o eliminar una carpeta")
+        st.markdown("""<div class="card" style="border-color:#7f1d1d;margin-bottom:16px;">
+            <p style="color:#fca5a5;margin:0;font-size:0.8rem;">
+                ⚠️ Estas acciones mueven o eliminan <strong>todos los archivos</strong> dentro de la carpeta elegida.
+                Si la carpeta tiene muchos PDFs puede tardar un rato. No se puede deshacer.
+            </p>
+        </div>""", unsafe_allow_html=True)
+
+        nivel = st.selectbox(
+            "¿Qué querés modificar?",
+            ["Empresa", "Obra", "Tipo", "Subtipo"],
+            key="nivel_modificar"
+        )
+
+        ruta_objetivo = None
+        nombre_actual = None
+
+        if nivel == "Empresa":
+            empresa_m = st.selectbox("Empresa", empresas, key="m_empresa")
+            ruta_objetivo = f"ventana/{empresa_m}"
+            nombre_actual = empresa_m
+
+        elif nivel == "Obra":
+            empresa_m = st.selectbox("Empresa", empresas, key="m_obra_empresa")
+            obras_m = obtener_obras(empresa_m)
+            if obras_m:
+                obra_m = st.selectbox("Obra", obras_m, key="m_obra")
+                ruta_objetivo = f"ventana/{empresa_m}/{obra_m}"
+                nombre_actual = obra_m
+            else:
+                st.info("Esta empresa no tiene obras.")
+
+        elif nivel == "Tipo":
+            empresa_m = st.selectbox("Empresa", empresas, key="m_tipo_empresa")
+            obras_m = obtener_obras(empresa_m)
+            origen_m = st.selectbox(
+                "¿Dónde está el tipo?",
+                [f"📚 Base documental ({CARPETA_BASES})"] + [f"🏗️ Obra: {o}" for o in obras_m],
+                key="m_tipo_origen"
+            )
+            ruta_padre_m = (f"ventana/{empresa_m}/{CARPETA_BASES}" if origen_m.startswith("📚")
+                             else f"ventana/{empresa_m}/{origen_m.replace('🏗️ Obra: ', '')}")
+            tipos_m = obtener_tipos(ruta_padre_m)
+            if tipos_m:
+                tipo_m = st.selectbox("Tipo", tipos_m, key="m_tipo")
+                ruta_objetivo = f"{ruta_padre_m}/{tipo_m}"
+                nombre_actual = tipo_m
+            else:
+                st.info("Esa carpeta no tiene tipos cargados.")
+
+        elif nivel == "Subtipo":
+            empresa_m = st.selectbox("Empresa", empresas, key="m_sub_empresa")
+            obras_m = obtener_obras(empresa_m)
+            origen_m = st.selectbox(
+                "¿Dónde está el tipo?",
+                [f"📚 Base documental ({CARPETA_BASES})"] + [f"🏗️ Obra: {o}" for o in obras_m],
+                key="m_sub_origen"
+            )
+            ruta_padre_m = (f"ventana/{empresa_m}/{CARPETA_BASES}" if origen_m.startswith("📚")
+                             else f"ventana/{empresa_m}/{origen_m.replace('🏗️ Obra: ', '')}")
+            tipos_m = obtener_tipos(ruta_padre_m)
+            if tipos_m:
+                tipo_m = st.selectbox("Tipo", tipos_m, key="m_sub_tipo")
+                subtipos_m = obtener_tipos(f"{ruta_padre_m}/{tipo_m}")
+                if subtipos_m:
+                    subtipo_m = st.selectbox("Subtipo", subtipos_m, key="m_subtipo")
+                    ruta_objetivo = f"{ruta_padre_m}/{tipo_m}/{subtipo_m}"
+                    nombre_actual = subtipo_m
+                else:
+                    st.info("Ese tipo no tiene subtipos cargados.")
+            else:
+                st.info("Esa carpeta no tiene tipos cargados.")
+
+        if ruta_objetivo:
+            st.markdown(f"""<div class="card" style="padding:10px 14px;margin:12px 0;">
+                <div style="color:#93c5fd;font-size:0.8rem;font-family:monospace;">📁 {ruta_objetivo}</div>
+            </div>""", unsafe_allow_html=True)
+
+            col_ren, col_del = st.columns(2)
+
+            with col_ren:
+                st.markdown("**Renombrar**")
+                nuevo_nombre = st.text_input("Nuevo nombre", value=nombre_actual, key="m_nuevo_nombre")
+                if st.button("✏️ Renombrar", key="m_btn_renombrar", use_container_width=True):
+                    nuevo_slug = limpiar_nombre(nuevo_nombre)
+                    if not nuevo_slug or nuevo_slug == nombre_actual:
+                        st.warning("Ingresá un nombre distinto al actual.")
+                    else:
+                        ruta_nueva = ruta_objetivo.rsplit("/", 1)[0] + "/" + nuevo_slug
+                        with st.spinner("Renombrando (puede tardar según la cantidad de archivos)..."):
+                            ok, msg = renombrar_carpeta_github(ruta_objetivo, ruta_nueva)
+                        if ok:
+                            st.success(f"✅ {msg}")
+                            st.cache_data.clear()
+                        else:
+                            st.error(f"❌ {msg}")
+
+            with col_del:
+                st.markdown("**Eliminar**")
+                confirmar = st.checkbox(f"Confirmo que quiero eliminar '{nombre_actual}' y todo su contenido",
+                                         key="m_confirmar_borrado")
+                if st.button("🗑️ Eliminar carpeta", key="m_btn_eliminar", use_container_width=True,
+                             disabled=not confirmar):
+                    with st.spinner("Eliminando..."):
+                        ok, msg = eliminar_carpeta_github(ruta_objetivo)
+                    if ok:
+                        st.success(f"✅ {msg}")
+                        st.cache_data.clear()
+                    else:
+                        st.error(f"❌ {msg}")
 
     st.markdown("<hr style='border-color:#334155; margin:24px 0 16px 0;'>", unsafe_allow_html=True)
     st.markdown("#### 📲 Probar WhatsApp")
