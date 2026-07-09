@@ -237,6 +237,7 @@ def _listar_hijos(parent_id, solo_carpetas=False, solo_pdfs=False):
 def crear_carpeta_drive(nombre, parent_id):
     metadata = {"name": nombre, "mimeType": "application/vnd.google-apps.folder", "parents": [parent_id]}
     carpeta = DRIVE.files().create(body=metadata, fields="id", supportsAllDrives=True).execute()
+    _listar_hijos.clear()  # invalida la caché para que la carpeta recién creada se vea al instante
     return carpeta["id"]
 
 def resolver_id(*nombres, crear_si_no_existe=False):
@@ -323,6 +324,7 @@ def renombrar_carpeta(ruta_nombres, nuevo_nombre):
         return False, "No se encontró la carpeta."
     try:
         DRIVE.files().update(fileId=folder_id, body={"name": nuevo_nombre}, supportsAllDrives=True).execute()
+        _listar_hijos.clear()
         return True, "Carpeta renombrada correctamente."
     except HttpError as e:
         return False, str(e)
@@ -334,6 +336,7 @@ def eliminar_carpeta(ruta_nombres):
         return False, "No se encontró la carpeta."
     try:
         DRIVE.files().update(fileId=folder_id, body={"trashed": True}, supportsAllDrives=True).execute()
+        _listar_hijos.clear()
         return True, "Carpeta movida a la papelera de Drive."
     except HttpError as e:
         return False, str(e)
