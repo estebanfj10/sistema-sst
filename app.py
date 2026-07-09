@@ -43,6 +43,22 @@ h1, h2, h3, h4 { color: #f1f5f9 !important; }
     border: 1px solid #334155 !important;
     border-radius: 8px !important;
 }
+/* Menú desplegable de opciones del selectbox (se renderiza en una capa aparte) */
+[data-baseweb="popover"] [data-baseweb="menu"],
+[data-baseweb="popover"] ul[role="listbox"] {
+    background-color: #1e293b !important;
+    border: 1px solid #334155 !important;
+}
+[data-baseweb="popover"] li[role="option"],
+[data-baseweb="popover"] li {
+    background-color: #1e293b !important;
+    color: #e2e8f0 !important;
+}
+[data-baseweb="popover"] li[role="option"]:hover,
+[data-baseweb="popover"] li[aria-selected="true"] {
+    background-color: #334155 !important;
+    color: #f1f5f9 !important;
+}
 .stButton > button {
     background: linear-gradient(135deg, #1e40af, #3b82f6);
     color: white !important;
@@ -519,7 +535,12 @@ with st.sidebar:
 # =========================
 # HEADER
 # =========================
-tipos = obtener_tipos(empresa, obra) if (empresa and obra) else []
+if empresa and obra:
+    tipos_base = obtener_tipos(empresa, CARPETA_BASES)
+    tipos_obra = obtener_tipos(empresa, obra)
+    tipos = sorted(set(tipos_base) | set(tipos_obra))
+else:
+    tipos = []
 
 st.markdown(f"""
 <div class="main-header">
