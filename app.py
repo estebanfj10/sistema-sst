@@ -1,8 +1,13 @@
+import io
 import streamlit as st
 import requests
-import base64
 from datetime import datetime
 from collections import defaultdict
+
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
+from googleapiclient.errors import HttpError
 
 # =========================
 # PAGE CONFIG — PRIMERO
@@ -96,7 +101,14 @@ label, .stMarkdown p { color: #cbd5e1 !important; }
 # =========================
 # LOGIN
 # =========================
-USUARIOS = {"esteban": "seguridad2026"}
+# Cada usuario tiene una contraseña y un rol:
+#   "admin"    → ve todo, incluida la gestión de carpetas
+#   "operario" → solo Dashboard, Consulta y Cargar documento
+USUARIOS = {
+    "esteban": {"password": "seguridad2026", "rol": "admin"},
+    # Agregá acá más usuarios operarios, por ejemplo:
+    # "juan":  {"password": "obra2026", "rol": "operario"},
+}
 
 def login():
     st.markdown("""
@@ -113,9 +125,11 @@ def login():
     user = st.text_input("👤 Usuario", placeholder="Ingresá tu usuario")
     pwd  = st.text_input("🔑 Contraseña", type="password", placeholder="••••••••")
     if st.button("Ingresar →", use_container_width=True):
-        if user.lower() in USUARIOS and USUARIOS[user.lower()] == pwd:
+        datos_usuario = USUARIOS.get(user.lower())
+        if datos_usuario and datos_usuario["password"] == pwd:
             st.session_state["login"]   = True
             st.session_state["usuario"] = user.lower()
+            st.session_state["rol"]     = datos_usuario["rol"]
             st.rerun()
         else:
             st.error("❌ Usuario o contraseña incorrectos")
@@ -126,6 +140,8 @@ if "login" not in st.session_state:
 if not st.session_state["login"]:
     login()
     st.stop()
+if "rol" not in st.session_state:
+    st.session_state["rol"] = "operario"
 
 # =========================
 # UTILIDADES
@@ -152,95 +168,175 @@ def estado_fecha(fecha):
         return "proximo"
     return "vigente"
 
-# =========================
-# API GITHUB
-# =========================
-# Token y repo se leen UNA sola vez fuera de las funciones cacheadas
-GH_TOKEN = st.secrets["GITHUB_TOKEN"]
-GH_REPO  = st.secrets["GITHUB_REPO"]
-GH_HEADERS = {"Authorization": f"token {GH_TOKEN}"}
-
-# CallMeBot (WhatsApp) — opcional. Si no está configurado, la app funciona igual.
-CALLMEBOT_PHONE  = st.secrets.get("CALLMEBOT_PHONE", "")
-CALLMEBOT_APIKEY = st.secrets.get("CALLMEBOT_APIKEY", "")
-
-@st.cache_data(ttl=300)
-def github_api(ruta):
-    url = f"https://api.github.com/repos/{GH_REPO}/contents/{ruta}"
-    r   = requests.get(url, headers=GH_HEADERS)
-    if r.status_code == 200:
-        return r.json()
-    return []
-
-@st.cache_data(ttl=300)
-def github_api_url(url):
-    r = requests.get(url, headers=GH_HEADERS)
-    if r.status_code == 200:
-        return r.json()
-    return []
+def limpiar_nombre(nombre):
+    """Normaliza un nombre para usarlo como carpeta (sin espacios ni tildes)."""
+    reemplazos = {
+        "á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u", "ñ": "n",
+        "Á": "a", "É": "e", "Í": "i", "Ó": "o", "Ú": "u", "Ñ": "n",
+    }
+    n = nombre.strip().lower()
+    for a, b in reemplazos.items():
+        n = n.replace(a, b)
+    n = n.replace(" ", "_")
+    return "".join(c for c in n if c.isalnum() or c == "_")
 
 # =========================
-# ESTRUCTURA DEL REPO
+# GOOGLE DRIVE
+# =========================
+# Estructura en Drive (todo dentro de GDRIVE_ROOT_FOLDER_ID):
 #
-# ventana/
-#   empresa_n1/
-#     datos_bases/          ← base documental (fija)
-#       altura/ excavacion/ ...
-#     registro_obra1/       ← registros por obra
-#       altura/ excavacion/ ...
-#     registro_obra2/
-#     registro_obra3/
+# 📁 raíz (compartida con el service account)
+#   📁 empresa_n1/
+#     📁 datos_bases/          ← base documental (fija)
+#       📁 altura/ 📁 excavacion/ ...
+#     📁 obra1/                ← registros por obra
+#       📁 altura/ 📁 excavacion/ ...
+#     📁 obra2/
 # =========================
 
-CARPETA_BASES = "datos_bases"   # nombre exacto en tu repo
+CARPETA_BASES = "datos_bases"
+SCOPES = ["https://www.googleapis.com/auth/drive"]
+
+@st.cache_resource
+def get_drive_service():
+    info = dict(st.secrets["gdrive_service_account"])
+    creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+    return build("drive", "v3", credentials=creds)
+
+DRIVE = get_drive_service()
+ROOT_FOLDER_ID = st.secrets["GDRIVE_ROOT_FOLDER_ID"]
 
 @st.cache_data(ttl=300)
+def _listar_hijos(parent_id, solo_carpetas=False, solo_pdfs=False):
+    """Lista los archivos/carpetas directamente dentro de parent_id."""
+    condiciones = [f"'{parent_id}' in parents", "trashed=false"]
+    if solo_carpetas:
+        condiciones.append("mimeType='application/vnd.google-apps.folder'")
+    if solo_pdfs:
+        condiciones.append("mimeType='application/pdf'")
+    query = " and ".join(condiciones)
+    items, page_token = [], None
+    try:
+        while True:
+            resp = DRIVE.files().list(
+                q=query,
+                fields="nextPageToken, files(id, name, mimeType)",
+                pageSize=1000,
+                pageToken=page_token,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+            ).execute()
+            items.extend(resp.get("files", []))
+            page_token = resp.get("nextPageToken")
+            if not page_token:
+                break
+    except HttpError:
+        return []
+    return items
+
+def crear_carpeta_drive(nombre, parent_id):
+    metadata = {"name": nombre, "mimeType": "application/vnd.google-apps.folder", "parents": [parent_id]}
+    carpeta = DRIVE.files().create(body=metadata, fields="id", supportsAllDrives=True).execute()
+    return carpeta["id"]
+
+def resolver_id(*nombres, crear_si_no_existe=False):
+    """
+    Recorre la cadena de nombres de carpetas desde la raíz y devuelve el id
+    de la última. Si crear_si_no_existe=True, crea las que falten.
+    """
+    actual = ROOT_FOLDER_ID
+    for nombre in nombres:
+        hijos = _listar_hijos(actual, solo_carpetas=True)
+        encontrado = next((h for h in hijos if h["name"] == nombre), None)
+        if encontrado:
+            actual = encontrado["id"]
+        elif crear_si_no_existe:
+            actual = crear_carpeta_drive(nombre, actual)
+        else:
+            return None
+    return actual
+
+def url_descarga(file_id):
+    return f"https://drive.google.com/uc?export=download&id={file_id}"
+
+def hacer_publico(file_id):
+    """Permite que cualquiera con el link pueda ver/descargar el archivo."""
+    try:
+        DRIVE.permissions().create(
+            fileId=file_id, body={"role": "reader", "type": "anyone"}, supportsAllDrives=True
+        ).execute()
+    except HttpError:
+        pass
+
 def obtener_empresas():
-    """Carpetas dentro de ventana/"""
-    data = github_api("ventana")
-    if not isinstance(data, list):
-        return []
-    return [i["name"] for i in data if i["type"] == "dir"]
+    return [h["name"] for h in _listar_hijos(ROOT_FOLDER_ID, solo_carpetas=True)]
 
-@st.cache_data(ttl=300)
 def obtener_obras(empresa):
-    """Carpetas dentro de ventana/empresa/ que NO sean datos_bases"""
-    data = github_api(f"ventana/{empresa}")
-    if not isinstance(data, list):
+    empresa_id = resolver_id(empresa)
+    if not empresa_id:
         return []
-    return [i["name"] for i in data
-            if i["type"] == "dir" and i["name"] != CARPETA_BASES]
+    return [h["name"] for h in _listar_hijos(empresa_id, solo_carpetas=True) if h["name"] != CARPETA_BASES]
 
-@st.cache_data(ttl=300)
-def obtener_tipos(obra_ruta):
-    """
-    Subcarpetas dentro de una obra (altura, excavacion, etc.)
-    obra_ruta = ventana/empresa/registro_obraX
-    """
-    data = github_api(obra_ruta)
-    if not isinstance(data, list):
+def obtener_tipos(*ruta_nombres):
+    """Subcarpetas dentro de la ruta indicada (empresa, obra) o (empresa, datos_bases)."""
+    parent_id = resolver_id(*ruta_nombres)
+    if not parent_id:
         return []
-    return [i["name"] for i in data if i["type"] == "dir"]
+    return [h["name"] for h in _listar_hijos(parent_id, solo_carpetas=True)]
 
-@st.cache_data(ttl=300)
-def obtener_pdfs_carpeta(ruta_completa):
+def obtener_pdfs_carpeta(*ruta_nombres):
     """
     Devuelve lista de PDFs (y PDFs en subcarpetas) de una ruta.
-    ruta_completa = ventana/empresa/datos_bases/altura
+    ruta_nombres, ej: (empresa, "datos_bases", "altura")
     """
-    res  = []
-    data = github_api(ruta_completa)
-    if not isinstance(data, list):
+    res = []
+    parent_id = resolver_id(*ruta_nombres)
+    if not parent_id:
         return res
-    for i in data:
-        if i["type"] == "file" and i["name"].endswith(".pdf"):
-            res.append({"nombre": i["name"], "url": i["download_url"], "subtipo": "general"})
-        elif i["type"] == "dir":
-            sub = github_api_url(i["url"])
-            for j in sub:
-                if j["type"] == "file" and j["name"].endswith(".pdf"):
-                    res.append({"nombre": j["name"], "url": j["download_url"], "subtipo": i["name"]})
+    hijos = _listar_hijos(parent_id)
+    for h in hijos:
+        if h["mimeType"] == "application/pdf":
+            res.append({"nombre": h["name"], "url": url_descarga(h["id"]), "id": h["id"], "subtipo": "general"})
+        elif h["mimeType"] == "application/vnd.google-apps.folder":
+            sub_hijos = _listar_hijos(h["id"], solo_pdfs=True)
+            for j in sub_hijos:
+                res.append({"nombre": j["name"], "url": url_descarga(j["id"]), "id": j["id"], "subtipo": h["name"]})
     return res
+
+def subir_a_drive(ruta_nombres, nombre_archivo, contenido_bytes):
+    """Sube un PDF a la ruta indicada, creando las carpetas que falten."""
+    try:
+        parent_id = resolver_id(*ruta_nombres, crear_si_no_existe=True)
+        media = MediaIoBaseUpload(io.BytesIO(contenido_bytes), mimetype="application/pdf", resumable=True)
+        metadata = {"name": nombre_archivo, "parents": [parent_id]}
+        archivo = DRIVE.files().create(
+            body=metadata, media_body=media, fields="id", supportsAllDrives=True
+        ).execute()
+        hacer_publico(archivo["id"])
+        return True
+    except HttpError:
+        return False
+
+def renombrar_carpeta(ruta_nombres, nuevo_nombre):
+    folder_id = resolver_id(*ruta_nombres)
+    if not folder_id:
+        return False, "No se encontró la carpeta."
+    try:
+        DRIVE.files().update(fileId=folder_id, body={"name": nuevo_nombre}, supportsAllDrives=True).execute()
+        return True, "Carpeta renombrada correctamente."
+    except HttpError as e:
+        return False, str(e)
+
+def eliminar_carpeta(ruta_nombres):
+    """Mueve la carpeta a la papelera de Drive (se puede restaurar desde ahí)."""
+    folder_id = resolver_id(*ruta_nombres)
+    if not folder_id:
+        return False, "No se encontró la carpeta."
+    try:
+        DRIVE.files().update(fileId=folder_id, body={"trashed": True}, supportsAllDrives=True).execute()
+        return True, "Carpeta movida a la papelera de Drive."
+    except HttpError as e:
+        return False, str(e)
 
 # =========================
 # CONTROL DE CUMPLIMIENTO
@@ -287,7 +383,7 @@ def evaluar_control(tipo, base_docs, reg_docs):
 def obtener_alertas(empresa, obra, tipos):
     alertas = []
     for t in tipos:
-        docs = obtener_pdfs_carpeta(f"ventana/{empresa}/{obra}/{t}")
+        docs = obtener_pdfs_carpeta(empresa, obra, t)
         for d in docs:
             f   = obtener_fecha(d["nombre"])
             est = estado_fecha(f)
@@ -298,126 +394,18 @@ def obtener_alertas(empresa, obra, tipos):
 def resumen_general(empresa, obra, tipos):
     data = []
     for t in tipos:
-        base_docs = obtener_pdfs_carpeta(f"ventana/{empresa}/{CARPETA_BASES}/{t}")
-        reg_docs  = obtener_pdfs_carpeta(f"ventana/{empresa}/{obra}/{t}")
+        base_docs = obtener_pdfs_carpeta(empresa, CARPETA_BASES, t)
+        reg_docs  = obtener_pdfs_carpeta(empresa, obra, t)
         estado, faltantes = evaluar_control(t, base_docs, reg_docs)
         data.append({"tipo": t, "estado": estado, "faltantes": faltantes})
     return data
 
 # =========================
-# SUBIR
-# =========================
-def subir_a_github(ruta_completa, nombre, contenido):
-    url = f"https://api.github.com/repos/{GH_REPO}/contents/{ruta_completa}/{nombre}"
-    b64 = base64.b64encode(contenido).decode()
-    r   = requests.put(
-        url,
-        json={"message": f"Subida: {nombre}", "content": b64},
-        headers=GH_HEADERS
-    )
-    return r.status_code in [200, 201]
-
-def crear_carpeta_github(ruta_completa):
-    """
-    GitHub no tiene 'carpetas vacías': se crean subiendo un archivo
-    placeholder (.gitkeep) adentro de la ruta deseada.
-    """
-    return subir_a_github(ruta_completa, ".gitkeep", b"")
-
-def listar_archivos_recursivo(ruta):
-    """
-    Lista (sin caché) todos los archivos dentro de una ruta, recorriendo
-    subcarpetas. Devuelve una lista de paths completos (strings).
-    Se usa para renombrar/eliminar, por eso NO está cacheada: necesita
-    datos frescos (sha correcto) en el momento de la operación.
-    """
-    archivos = []
-    r = requests.get(f"https://api.github.com/repos/{GH_REPO}/contents/{ruta}", headers=GH_HEADERS)
-    if r.status_code != 200:
-        return archivos
-    data = r.json()
-    if not isinstance(data, list):
-        return archivos
-    for item in data:
-        if item["type"] == "file":
-            archivos.append(item["path"])
-        elif item["type"] == "dir":
-            archivos.extend(listar_archivos_recursivo(item["path"]))
-    return archivos
-
-def renombrar_carpeta_github(ruta_vieja, ruta_nueva):
-    """
-    GitHub no soporta 'mover' carpetas: se recrea cada archivo en la
-    ruta nueva y se borra de la ruta vieja.
-    """
-    archivos = listar_archivos_recursivo(ruta_vieja)
-    if not archivos:
-        return False, "La carpeta está vacía o no existe."
-    errores = 0
-    for path_viejo in archivos:
-        r = requests.get(f"https://api.github.com/repos/{GH_REPO}/contents/{path_viejo}", headers=GH_HEADERS)
-        if r.status_code != 200:
-            errores += 1
-            continue
-        info = r.json()
-        path_nuevo = ruta_nueva + path_viejo[len(ruta_vieja):]
-        put = requests.put(
-            f"https://api.github.com/repos/{GH_REPO}/contents/{path_nuevo}",
-            json={"message": f"Renombrar: {path_viejo} -> {path_nuevo}", "content": info["content"]},
-            headers=GH_HEADERS
-        )
-        if put.status_code not in (200, 201):
-            errores += 1
-            continue
-        d = requests.delete(
-            f"https://api.github.com/repos/{GH_REPO}/contents/{path_viejo}",
-            json={"message": f"Eliminado tras renombrar: {path_viejo}", "sha": info["sha"]},
-            headers=GH_HEADERS
-        )
-        if d.status_code not in (200, 204):
-            errores += 1
-    if errores:
-        return False, f"{len(archivos) - errores}/{len(archivos)} archivos movidos, {errores} con error."
-    return True, f"{len(archivos)} archivo(s) movidos correctamente."
-
-def eliminar_carpeta_github(ruta):
-    """Elimina todos los archivos dentro de una ruta (equivale a borrar la carpeta)."""
-    archivos = listar_archivos_recursivo(ruta)
-    if not archivos:
-        return False, "La carpeta está vacía o no existe."
-    errores = 0
-    for path in archivos:
-        r = requests.get(f"https://api.github.com/repos/{GH_REPO}/contents/{path}", headers=GH_HEADERS)
-        if r.status_code != 200:
-            errores += 1
-            continue
-        sha = r.json()["sha"]
-        d = requests.delete(
-            f"https://api.github.com/repos/{GH_REPO}/contents/{path}",
-            json={"message": f"Eliminado: {path}", "sha": sha},
-            headers=GH_HEADERS
-        )
-        if d.status_code not in (200, 204):
-            errores += 1
-    if errores:
-        return False, f"{len(archivos) - errores}/{len(archivos)} archivos eliminados, {errores} con error."
-    return True, f"{len(archivos)} archivo(s) eliminados correctamente."
-
-def limpiar_nombre(nombre):
-    """Normaliza un nombre para usarlo como carpeta (sin espacios ni tildes)."""
-    reemplazos = {
-        "á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u", "ñ": "n",
-        "Á": "a", "É": "e", "Í": "i", "Ó": "o", "Ú": "u", "Ñ": "n",
-    }
-    n = nombre.strip().lower()
-    for a, b in reemplazos.items():
-        n = n.replace(a, b)
-    n = n.replace(" ", "_")
-    return "".join(c for c in n if c.isalnum() or c == "_")
-
-# =========================
 # WHATSAPP (CallMeBot)
 # =========================
+CALLMEBOT_PHONE  = st.secrets.get("CALLMEBOT_PHONE", "")
+CALLMEBOT_APIKEY = st.secrets.get("CALLMEBOT_APIKEY", "")
+
 def whatsapp_configurado():
     return bool(CALLMEBOT_PHONE and CALLMEBOT_APIKEY)
 
@@ -471,7 +459,7 @@ with st.sidebar:
 
     empresas = obtener_empresas()
     if not empresas:
-        st.error("⚠️ No se pudo leer el repositorio. Verificá el token y el nombre del repo en secrets.")
+        st.error("⚠️ No se pudo leer la carpeta de Drive. Verificá GDRIVE_ROOT_FOLDER_ID y que esté compartida con el service account.")
         st.stop()
 
     empresa = st.selectbox("🏢 Empresa", empresas, key="empresa")
@@ -485,9 +473,13 @@ with st.sidebar:
 
     st.markdown("<hr style='border-color:#334155; margin:12px 0;'>", unsafe_allow_html=True)
 
+    opciones_nav = ["📊 Dashboard", "🔎 Consulta", "📤 Cargar documento"]
+    if st.session_state["rol"] == "admin":
+        opciones_nav.append("⚙️ Gestionar carpetas")
+
     seccion = st.radio(
         "Navegación",
-        ["📊 Dashboard", "🔎 Consulta", "📤 Cargar documento", "⚙️ Gestionar carpetas"],
+        opciones_nav,
         key="seccion"
     )
 
@@ -505,6 +497,7 @@ with st.sidebar:
     <div style="margin-top:20px; text-align:center;">
         <p style="color:#334155; font-size:0.7rem; margin:0;">
             Usuario: <span style="color:#64748b">{st.session_state['usuario']}</span>
+            ({st.session_state['rol']})
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -512,8 +505,7 @@ with st.sidebar:
 # =========================
 # HEADER
 # =========================
-# Tipos = subcarpetas de la obra seleccionada
-tipos = obtener_tipos(f"ventana/{empresa}/{obra}")
+tipos = obtener_tipos(empresa, obra)
 
 st.markdown(f"""
 <div class="main-header">
@@ -627,10 +619,8 @@ elif seccion == "🔎 Consulta":
 
     tipo_sel = st.selectbox("Seleccioná el tipo", tipos, key="tipo_consulta")
 
-    # Base documental = datos_bases/tipo
-    base_docs = obtener_pdfs_carpeta(f"ventana/{empresa}/{CARPETA_BASES}/{tipo_sel}")
-    # Registros de la obra = registro_obraX/tipo
-    reg_docs  = obtener_pdfs_carpeta(f"ventana/{empresa}/{obra}/{tipo_sel}")
+    base_docs = obtener_pdfs_carpeta(empresa, CARPETA_BASES, tipo_sel)
+    reg_docs  = obtener_pdfs_carpeta(empresa, obra, tipo_sel)
 
     col1, col2 = st.columns(2)
 
@@ -679,7 +669,6 @@ elif seccion == "🔎 Consulta":
                 Sin registros cargados para este tipo
             </div>""", unsafe_allow_html=True)
 
-    # Control
     estado, faltantes = evaluar_control(tipo_sel, base_docs, reg_docs)
     badge_map = {
         "completo": ("badge-ok",      "✅ COMPLETO"),
@@ -721,19 +710,17 @@ elif seccion == "📤 Cargar documento":
         with col1:
             tipo_carga = st.selectbox("Tipo de documento", tipos, key="tipo_carga")
         with col2:
-            # Subcarpetas dentro de la obra/tipo (si las hay)
-            subs_data = github_api(f"ventana/{empresa}/{obra}/{tipo_carga}")
-            subs = [i["name"] for i in subs_data if isinstance(subs_data, list) and i["type"] == "dir"]
+            subs = obtener_tipos(empresa, obra, tipo_carga)
             subtipo_sel = st.selectbox("Subtipo", ["— sin subtipo —"] + subs, key="subtipo_carga")
 
-        ruta = f"ventana/{empresa}/{obra}/{tipo_carga}"
+        ruta = (empresa, obra, tipo_carga)
         if subtipo_sel != "— sin subtipo —":
-            ruta += f"/{subtipo_sel}"
+            ruta += (subtipo_sel,)
 
         st.markdown(f"""<div class="card" style="margin:12px 0;">
-            <div class="card-title">Destino en repositorio</div>
+            <div class="card-title">Destino en Drive</div>
             <div style="color:#93c5fd;font-size:0.85rem;font-family:monospace;">
-                {ruta}/{archivo.name}
+                {" / ".join(ruta)} / {archivo.name}
             </div>
         </div>""", unsafe_allow_html=True)
 
@@ -746,7 +733,7 @@ elif seccion == "📤 Cargar documento":
 
         if st.button("⬆️ Subir documento", use_container_width=True):
             with st.spinner("Subiendo..."):
-                ok = subir_a_github(ruta, archivo.name, archivo.getbuffer())
+                ok = subir_a_drive(ruta, archivo.name, archivo.getbuffer())
             if ok:
                 st.success("✅ Documento subido correctamente")
                 if notificar_wp:
@@ -764,16 +751,19 @@ elif seccion == "📤 Cargar documento":
                         st.warning(f"⚠️ Documento subido, pero falló el WhatsApp: {wp_resp}")
                 st.cache_data.clear()
             else:
-                st.error("❌ Error al subir. Verificá el token y los permisos del repositorio.")
+                st.error("❌ Error al subir. Verificá los permisos del service account en Drive.")
 
 # =========================
 # GESTIONAR CARPETAS
 # =========================
 elif seccion == "⚙️ Gestionar carpetas":
+    if st.session_state["rol"] != "admin":
+        st.error("🚫 No tenés permisos para acceder a esta sección.")
+        st.stop()
     st.markdown("### ⚙️ Gestión de carpetas")
     st.markdown("""<div class="card" style="margin-bottom:20px;border-color:#1e40af;">
         <p style="color:#93c5fd;margin:0;font-size:0.85rem;">
-            📌 Acá podés crear nuevas empresas, obras, tipos y subtipos sin entrar a GitHub.
+            📌 Acá podés crear, renombrar y eliminar empresas, obras, tipos y subtipos directamente en Drive.
             Los nombres se normalizan automáticamente (sin espacios ni tildes).
         </p>
     </div>""", unsafe_allow_html=True)
@@ -792,12 +782,10 @@ elif seccion == "⚙️ Gestionar carpetas":
             else:
                 slug = limpiar_nombre(nombre_empresa)
                 with st.spinner("Creando..."):
-                    ok = crear_carpeta_github(f"ventana/{slug}/{CARPETA_BASES}")
-                if ok:
-                    st.success(f"✅ Empresa '{slug}' creada")
-                    st.cache_data.clear()
-                else:
-                    st.error("❌ No se pudo crear (¿ya existe?)")
+                    resolver_id(slug, crear_si_no_existe=True)
+                    resolver_id(slug, CARPETA_BASES, crear_si_no_existe=True)
+                st.success(f"✅ Empresa '{slug}' creada")
+                st.cache_data.clear()
 
     # --- Nueva obra ---
     with tab2:
@@ -811,12 +799,9 @@ elif seccion == "⚙️ Gestionar carpetas":
             else:
                 slug = limpiar_nombre(nombre_obra)
                 with st.spinner("Creando..."):
-                    ok = crear_carpeta_github(f"ventana/{empresa_obra}/{slug}")
-                if ok:
-                    st.success(f"✅ Obra '{slug}' creada en {empresa_obra}")
-                    st.cache_data.clear()
-                else:
-                    st.error("❌ No se pudo crear (¿ya existe?)")
+                    resolver_id(empresa_obra, slug, crear_si_no_existe=True)
+                st.success(f"✅ Obra '{slug}' creada en {empresa_obra}")
+                st.cache_data.clear()
 
     # --- Nuevo tipo ---
     with tab3:
@@ -836,17 +821,14 @@ elif seccion == "⚙️ Gestionar carpetas":
             else:
                 slug = limpiar_nombre(nombre_tipo)
                 if destino_tipo.startswith("📚"):
-                    ruta_padre = f"ventana/{empresa_tipo}/{CARPETA_BASES}"
+                    ruta_padre = (empresa_tipo, CARPETA_BASES)
                 else:
                     obra_destino = destino_tipo.replace("🏗️ Obra: ", "")
-                    ruta_padre = f"ventana/{empresa_tipo}/{obra_destino}"
+                    ruta_padre = (empresa_tipo, obra_destino)
                 with st.spinner("Creando..."):
-                    ok = crear_carpeta_github(f"{ruta_padre}/{slug}")
-                if ok:
-                    st.success(f"✅ Tipo '{slug}' creado en {ruta_padre}")
-                    st.cache_data.clear()
-                else:
-                    st.error("❌ No se pudo crear (¿ya existe?)")
+                    resolver_id(*ruta_padre, slug, crear_si_no_existe=True)
+                st.success(f"✅ Tipo '{slug}' creado en {' / '.join(ruta_padre)}")
+                st.cache_data.clear()
         st.caption("💡 Tip: si el tipo es de un permiso de trabajo (altura, excavación, caliente, izaje, espacio confinado), "
                    "creálo también dentro de la base documental y dentro de cada obra que lo necesite.")
 
@@ -862,12 +844,12 @@ elif seccion == "⚙️ Gestionar carpetas":
             key="origen_subtipo"
         )
         if origen_subtipo.startswith("📚"):
-            ruta_base_subtipo = f"ventana/{empresa_subtipo}/{CARPETA_BASES}"
+            ruta_base_subtipo = (empresa_subtipo, CARPETA_BASES)
         else:
             obra_sel_subtipo = origen_subtipo.replace("🏗️ Obra: ", "")
-            ruta_base_subtipo = f"ventana/{empresa_subtipo}/{obra_sel_subtipo}"
+            ruta_base_subtipo = (empresa_subtipo, obra_sel_subtipo)
 
-        tipos_disponibles = obtener_tipos(ruta_base_subtipo)
+        tipos_disponibles = obtener_tipos(*ruta_base_subtipo)
         if not tipos_disponibles:
             st.warning("Esa carpeta todavía no tiene tipos creados. Creá un tipo primero en la pestaña anterior.")
         else:
@@ -879,20 +861,17 @@ elif seccion == "⚙️ Gestionar carpetas":
                 else:
                     slug = limpiar_nombre(nombre_subtipo)
                     with st.spinner("Creando..."):
-                        ok = crear_carpeta_github(f"{ruta_base_subtipo}/{tipo_padre}/{slug}")
-                    if ok:
-                        st.success(f"✅ Subtipo '{slug}' creado en {ruta_base_subtipo}/{tipo_padre}")
-                        st.cache_data.clear()
-                    else:
-                        st.error("❌ No se pudo crear (¿ya existe?)")
+                        resolver_id(*ruta_base_subtipo, tipo_padre, slug, crear_si_no_existe=True)
+                    st.success(f"✅ Subtipo '{slug}' creado en {' / '.join(ruta_base_subtipo)} / {tipo_padre}")
+                    st.cache_data.clear()
 
     # --- Modificar / Eliminar ---
     with tab5:
         st.markdown("#### ✏️ Renombrar o eliminar una carpeta")
-        st.markdown("""<div class="card" style="border-color:#7f1d1d;margin-bottom:16px;">
-            <p style="color:#fca5a5;margin:0;font-size:0.8rem;">
-                ⚠️ Estas acciones mueven o eliminan <strong>todos los archivos</strong> dentro de la carpeta elegida.
-                Si la carpeta tiene muchos PDFs puede tardar un rato. No se puede deshacer.
+        st.markdown("""<div class="card" style="border-color:#1e40af;margin-bottom:16px;">
+            <p style="color:#93c5fd;margin:0;font-size:0.8rem;">
+                ℹ️ Al eliminar, la carpeta se mueve a la <strong>papelera de Drive</strong> (se puede restaurar
+                desde ahí si fue un error). No se borra de forma permanente al instante.
             </p>
         </div>""", unsafe_allow_html=True)
 
@@ -907,7 +886,7 @@ elif seccion == "⚙️ Gestionar carpetas":
 
         if nivel == "Empresa":
             empresa_m = st.selectbox("Empresa", empresas, key="m_empresa")
-            ruta_objetivo = f"ventana/{empresa_m}"
+            ruta_objetivo = (empresa_m,)
             nombre_actual = empresa_m
 
         elif nivel == "Obra":
@@ -915,7 +894,7 @@ elif seccion == "⚙️ Gestionar carpetas":
             obras_m = obtener_obras(empresa_m)
             if obras_m:
                 obra_m = st.selectbox("Obra", obras_m, key="m_obra")
-                ruta_objetivo = f"ventana/{empresa_m}/{obra_m}"
+                ruta_objetivo = (empresa_m, obra_m)
                 nombre_actual = obra_m
             else:
                 st.info("Esta empresa no tiene obras.")
@@ -928,12 +907,12 @@ elif seccion == "⚙️ Gestionar carpetas":
                 [f"📚 Base documental ({CARPETA_BASES})"] + [f"🏗️ Obra: {o}" for o in obras_m],
                 key="m_tipo_origen"
             )
-            ruta_padre_m = (f"ventana/{empresa_m}/{CARPETA_BASES}" if origen_m.startswith("📚")
-                             else f"ventana/{empresa_m}/{origen_m.replace('🏗️ Obra: ', '')}")
-            tipos_m = obtener_tipos(ruta_padre_m)
+            ruta_padre_m = (empresa_m, CARPETA_BASES) if origen_m.startswith("📚") \
+                else (empresa_m, origen_m.replace("🏗️ Obra: ", ""))
+            tipos_m = obtener_tipos(*ruta_padre_m)
             if tipos_m:
                 tipo_m = st.selectbox("Tipo", tipos_m, key="m_tipo")
-                ruta_objetivo = f"{ruta_padre_m}/{tipo_m}"
+                ruta_objetivo = ruta_padre_m + (tipo_m,)
                 nombre_actual = tipo_m
             else:
                 st.info("Esa carpeta no tiene tipos cargados.")
@@ -946,15 +925,15 @@ elif seccion == "⚙️ Gestionar carpetas":
                 [f"📚 Base documental ({CARPETA_BASES})"] + [f"🏗️ Obra: {o}" for o in obras_m],
                 key="m_sub_origen"
             )
-            ruta_padre_m = (f"ventana/{empresa_m}/{CARPETA_BASES}" if origen_m.startswith("📚")
-                             else f"ventana/{empresa_m}/{origen_m.replace('🏗️ Obra: ', '')}")
-            tipos_m = obtener_tipos(ruta_padre_m)
+            ruta_padre_m = (empresa_m, CARPETA_BASES) if origen_m.startswith("📚") \
+                else (empresa_m, origen_m.replace("🏗️ Obra: ", ""))
+            tipos_m = obtener_tipos(*ruta_padre_m)
             if tipos_m:
                 tipo_m = st.selectbox("Tipo", tipos_m, key="m_sub_tipo")
-                subtipos_m = obtener_tipos(f"{ruta_padre_m}/{tipo_m}")
+                subtipos_m = obtener_tipos(*ruta_padre_m, tipo_m)
                 if subtipos_m:
                     subtipo_m = st.selectbox("Subtipo", subtipos_m, key="m_subtipo")
-                    ruta_objetivo = f"{ruta_padre_m}/{tipo_m}/{subtipo_m}"
+                    ruta_objetivo = ruta_padre_m + (tipo_m, subtipo_m)
                     nombre_actual = subtipo_m
                 else:
                     st.info("Ese tipo no tiene subtipos cargados.")
@@ -963,7 +942,7 @@ elif seccion == "⚙️ Gestionar carpetas":
 
         if ruta_objetivo:
             st.markdown(f"""<div class="card" style="padding:10px 14px;margin:12px 0;">
-                <div style="color:#93c5fd;font-size:0.8rem;font-family:monospace;">📁 {ruta_objetivo}</div>
+                <div style="color:#93c5fd;font-size:0.8rem;font-family:monospace;">📁 {" / ".join(ruta_objetivo)}</div>
             </div>""", unsafe_allow_html=True)
 
             col_ren, col_del = st.columns(2)
@@ -976,9 +955,8 @@ elif seccion == "⚙️ Gestionar carpetas":
                     if not nuevo_slug or nuevo_slug == nombre_actual:
                         st.warning("Ingresá un nombre distinto al actual.")
                     else:
-                        ruta_nueva = ruta_objetivo.rsplit("/", 1)[0] + "/" + nuevo_slug
-                        with st.spinner("Renombrando (puede tardar según la cantidad de archivos)..."):
-                            ok, msg = renombrar_carpeta_github(ruta_objetivo, ruta_nueva)
+                        with st.spinner("Renombrando..."):
+                            ok, msg = renombrar_carpeta(ruta_objetivo, nuevo_slug)
                         if ok:
                             st.success(f"✅ {msg}")
                             st.cache_data.clear()
@@ -992,7 +970,7 @@ elif seccion == "⚙️ Gestionar carpetas":
                 if st.button("🗑️ Eliminar carpeta", key="m_btn_eliminar", use_container_width=True,
                              disabled=not confirmar):
                     with st.spinner("Eliminando..."):
-                        ok, msg = eliminar_carpeta_github(ruta_objetivo)
+                        ok, msg = eliminar_carpeta(ruta_objetivo)
                     if ok:
                         st.success(f"✅ {msg}")
                         st.cache_data.clear()
@@ -1010,5 +988,4 @@ elif seccion == "⚙️ Gestionar carpetas":
             else:
                 st.error(f"❌ {resp}")
     else:
-        st.info("Para activar WhatsApp agregá `CALLMEBOT_PHONE` y `CALLMEBOT_APIKEY` en tus secrets de Streamlit. "
-                "Ver instrucciones abajo.")
+        st.info("Para activar WhatsApp agregá `CALLMEBOT_PHONE` y `CALLMEBOT_APIKEY` en tus secrets de Streamlit.")
