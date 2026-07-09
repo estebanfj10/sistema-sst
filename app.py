@@ -458,30 +458,41 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     empresas = obtener_empresas()
+
     if not empresas:
-        st.error("⚠️ No se pudo leer la carpeta de Drive. Verificá GDRIVE_ROOT_FOLDER_ID y que esté compartida con el service account.")
-        st.stop()
+        if st.session_state["rol"] == "admin":
+            st.info("👋 Todavía no hay ninguna empresa creada. Andá a '⚙️ Gestionar carpetas' para crear la primera.")
+            empresa, obra = None, None
+            seccion = "⚙️ Gestionar carpetas"
+        else:
+            st.error("⚠️ Todavía no hay datos cargados. Pedile al administrador que cree la primera empresa.")
+            st.stop()
+    else:
+        empresa = st.selectbox("🏢 Empresa", empresas, key="empresa")
+        obras = obtener_obras(empresa)
 
-    empresa = st.selectbox("🏢 Empresa", empresas, key="empresa")
+        if not obras:
+            if st.session_state["rol"] == "admin":
+                st.info(f"👋 '{empresa}' todavía no tiene obras. Andá a '⚙️ Gestionar carpetas' para crear la primera.")
+                obra = None
+                seccion = "⚙️ Gestionar carpetas"
+            else:
+                st.warning("Sin obras cargadas para esta empresa.")
+                st.stop()
+        else:
+            obra = st.selectbox("🏗️ Obra", obras, key="obra")
 
-    obras = obtener_obras(empresa)
-    if not obras:
-        st.warning("Sin obras cargadas para esta empresa.")
-        st.stop()
+            st.markdown("<hr style='border-color:#334155; margin:12px 0;'>", unsafe_allow_html=True)
 
-    obra = st.selectbox("🏗️ Obra", obras, key="obra")
+            opciones_nav = ["📊 Dashboard", "🔎 Consulta", "📤 Cargar documento"]
+            if st.session_state["rol"] == "admin":
+                opciones_nav.append("⚙️ Gestionar carpetas")
 
-    st.markdown("<hr style='border-color:#334155; margin:12px 0;'>", unsafe_allow_html=True)
-
-    opciones_nav = ["📊 Dashboard", "🔎 Consulta", "📤 Cargar documento"]
-    if st.session_state["rol"] == "admin":
-        opciones_nav.append("⚙️ Gestionar carpetas")
-
-    seccion = st.radio(
-        "Navegación",
-        opciones_nav,
-        key="seccion"
-    )
+            seccion = st.radio(
+                "Navegación",
+                opciones_nav,
+                key="seccion"
+            )
 
     st.markdown("<hr style='border-color:#334155; margin:12px 0;'>", unsafe_allow_html=True)
 
@@ -505,12 +516,12 @@ with st.sidebar:
 # =========================
 # HEADER
 # =========================
-tipos = obtener_tipos(empresa, obra)
+tipos = obtener_tipos(empresa, obra) if (empresa and obra) else []
 
 st.markdown(f"""
 <div class="main-header">
     <h1>🦺 Sistema SST</h1>
-    <p>📍 {empresa} &nbsp;›&nbsp; {obra}</p>
+    <p>📍 {empresa or "—"} &nbsp;›&nbsp; {obra or "—"}</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -790,192 +801,204 @@ elif seccion == "⚙️ Gestionar carpetas":
     # --- Nueva obra ---
     with tab2:
         st.markdown("#### Crear nueva obra")
-        st.caption("Elegí a qué empresa (ya existente) se le agrega la obra.")
-        empresa_obra = st.selectbox("Empresa", empresas, key="empresa_destino_obra")
-        nombre_obra = st.text_input("Nombre de la obra", key="in_obra")
-        if st.button("➕ Crear obra", key="btn_obra"):
-            if not nombre_obra:
-                st.warning("Ingresá un nombre.")
-            else:
-                slug = limpiar_nombre(nombre_obra)
-                with st.spinner("Creando..."):
-                    resolver_id(empresa_obra, slug, crear_si_no_existe=True)
-                st.success(f"✅ Obra '{slug}' creada en {empresa_obra}")
-                st.cache_data.clear()
+        if not empresas:
+            st.info("Primero creá una empresa en la pestaña anterior.")
+        else:
+            st.caption("Elegí a qué empresa (ya existente) se le agrega la obra.")
+            empresa_obra = st.selectbox("Empresa", empresas, key="empresa_destino_obra")
+            nombre_obra = st.text_input("Nombre de la obra", key="in_obra")
+            if st.button("➕ Crear obra", key="btn_obra"):
+                if not nombre_obra:
+                    st.warning("Ingresá un nombre.")
+                else:
+                    slug = limpiar_nombre(nombre_obra)
+                    with st.spinner("Creando..."):
+                        resolver_id(empresa_obra, slug, crear_si_no_existe=True)
+                    st.success(f"✅ Obra '{slug}' creada en {empresa_obra}")
+                    st.cache_data.clear()
 
     # --- Nuevo tipo ---
     with tab3:
         st.markdown("#### Crear nuevo tipo de registro")
-        st.caption("Elegí en qué empresa y en qué carpeta (base documental u obra, ambas ya existentes) va el tipo.")
-        empresa_tipo = st.selectbox("Empresa", empresas, key="empresa_destino_tipo")
-        obras_tipo = obtener_obras(empresa_tipo)
-        destino_tipo = st.selectbox(
-            "¿Dónde va este tipo?",
-            [f"📚 Base documental ({CARPETA_BASES})"] + [f"🏗️ Obra: {o}" for o in obras_tipo],
-            key="destino_tipo"
-        )
-        nombre_tipo = st.text_input("Nombre del tipo (ej: altura, excavacion)", key="in_tipo")
-        if st.button("➕ Crear tipo", key="btn_tipo"):
-            if not nombre_tipo:
-                st.warning("Ingresá un nombre.")
-            else:
-                slug = limpiar_nombre(nombre_tipo)
-                if destino_tipo.startswith("📚"):
-                    ruta_padre = (empresa_tipo, CARPETA_BASES)
+        if not empresas:
+            st.info("Primero creá una empresa en la pestaña anterior.")
+        else:
+            st.caption("Elegí en qué empresa y en qué carpeta (base documental u obra, ambas ya existentes) va el tipo.")
+            empresa_tipo = st.selectbox("Empresa", empresas, key="empresa_destino_tipo")
+            obras_tipo = obtener_obras(empresa_tipo)
+            destino_tipo = st.selectbox(
+                "¿Dónde va este tipo?",
+                [f"📚 Base documental ({CARPETA_BASES})"] + [f"🏗️ Obra: {o}" for o in obras_tipo],
+                key="destino_tipo"
+            )
+            nombre_tipo = st.text_input("Nombre del tipo (ej: altura, excavacion)", key="in_tipo")
+            if st.button("➕ Crear tipo", key="btn_tipo"):
+                if not nombre_tipo:
+                    st.warning("Ingresá un nombre.")
                 else:
-                    obra_destino = destino_tipo.replace("🏗️ Obra: ", "")
-                    ruta_padre = (empresa_tipo, obra_destino)
-                with st.spinner("Creando..."):
-                    resolver_id(*ruta_padre, slug, crear_si_no_existe=True)
-                st.success(f"✅ Tipo '{slug}' creado en {' / '.join(ruta_padre)}")
-                st.cache_data.clear()
-        st.caption("💡 Tip: si el tipo es de un permiso de trabajo (altura, excavación, caliente, izaje, espacio confinado), "
-                   "creálo también dentro de la base documental y dentro de cada obra que lo necesite.")
+                    slug = limpiar_nombre(nombre_tipo)
+                    if destino_tipo.startswith("📚"):
+                        ruta_padre = (empresa_tipo, CARPETA_BASES)
+                    else:
+                        obra_destino = destino_tipo.replace("🏗️ Obra: ", "")
+                        ruta_padre = (empresa_tipo, obra_destino)
+                    with st.spinner("Creando..."):
+                        resolver_id(*ruta_padre, slug, crear_si_no_existe=True)
+                    st.success(f"✅ Tipo '{slug}' creado en {' / '.join(ruta_padre)}")
+                    st.cache_data.clear()
+            st.caption("💡 Tip: si el tipo es de un permiso de trabajo (altura, excavación, caliente, izaje, espacio confinado), "
+                       "creálo también dentro de la base documental y dentro de cada obra que lo necesite.")
 
     # --- Nuevo subtipo ---
     with tab4:
         st.markdown("#### Crear nuevo subtipo")
-        st.caption("Un subtipo es una subcarpeta dentro de un tipo ya existente (ej: dentro de 'altura' → 'permiso', 'ats').")
-        empresa_subtipo = st.selectbox("Empresa", empresas, key="empresa_destino_subtipo")
-        obras_subtipo = obtener_obras(empresa_subtipo)
-        origen_subtipo = st.selectbox(
-            "¿Dentro de qué carpeta va?",
-            [f"📚 Base documental ({CARPETA_BASES})"] + [f"🏗️ Obra: {o}" for o in obras_subtipo],
-            key="origen_subtipo"
-        )
-        if origen_subtipo.startswith("📚"):
-            ruta_base_subtipo = (empresa_subtipo, CARPETA_BASES)
+        if not empresas:
+            st.info("Primero creá una empresa en la pestaña anterior.")
         else:
-            obra_sel_subtipo = origen_subtipo.replace("🏗️ Obra: ", "")
-            ruta_base_subtipo = (empresa_subtipo, obra_sel_subtipo)
+            st.caption("Un subtipo es una subcarpeta dentro de un tipo ya existente (ej: dentro de 'altura' → 'permiso', 'ats').")
+            empresa_subtipo = st.selectbox("Empresa", empresas, key="empresa_destino_subtipo")
+            obras_subtipo = obtener_obras(empresa_subtipo)
+            origen_subtipo = st.selectbox(
+                "¿Dentro de qué carpeta va?",
+                [f"📚 Base documental ({CARPETA_BASES})"] + [f"🏗️ Obra: {o}" for o in obras_subtipo],
+                key="origen_subtipo"
+            )
+            if origen_subtipo.startswith("📚"):
+                ruta_base_subtipo = (empresa_subtipo, CARPETA_BASES)
+            else:
+                obra_sel_subtipo = origen_subtipo.replace("🏗️ Obra: ", "")
+                ruta_base_subtipo = (empresa_subtipo, obra_sel_subtipo)
 
-        tipos_disponibles = obtener_tipos(*ruta_base_subtipo)
-        if not tipos_disponibles:
-            st.warning("Esa carpeta todavía no tiene tipos creados. Creá un tipo primero en la pestaña anterior.")
-        else:
-            tipo_padre = st.selectbox("Tipo", tipos_disponibles, key="in_tipo_padre_subtipo")
-            nombre_subtipo = st.text_input("Nombre del subtipo (ej: permiso, ats, checklist)", key="in_subtipo")
-            if st.button("➕ Crear subtipo", key="btn_subtipo"):
-                if not nombre_subtipo:
-                    st.warning("Ingresá un nombre.")
-                else:
-                    slug = limpiar_nombre(nombre_subtipo)
-                    with st.spinner("Creando..."):
-                        resolver_id(*ruta_base_subtipo, tipo_padre, slug, crear_si_no_existe=True)
-                    st.success(f"✅ Subtipo '{slug}' creado en {' / '.join(ruta_base_subtipo)} / {tipo_padre}")
-                    st.cache_data.clear()
+            tipos_disponibles = obtener_tipos(*ruta_base_subtipo)
+            if not tipos_disponibles:
+                st.warning("Esa carpeta todavía no tiene tipos creados. Creá un tipo primero en la pestaña anterior.")
+            else:
+                tipo_padre = st.selectbox("Tipo", tipos_disponibles, key="in_tipo_padre_subtipo")
+                nombre_subtipo = st.text_input("Nombre del subtipo (ej: permiso, ats, checklist)", key="in_subtipo")
+                if st.button("➕ Crear subtipo", key="btn_subtipo"):
+                    if not nombre_subtipo:
+                        st.warning("Ingresá un nombre.")
+                    else:
+                        slug = limpiar_nombre(nombre_subtipo)
+                        with st.spinner("Creando..."):
+                            resolver_id(*ruta_base_subtipo, tipo_padre, slug, crear_si_no_existe=True)
+                        st.success(f"✅ Subtipo '{slug}' creado en {' / '.join(ruta_base_subtipo)} / {tipo_padre}")
+                        st.cache_data.clear()
 
     # --- Modificar / Eliminar ---
     with tab5:
         st.markdown("#### ✏️ Renombrar o eliminar una carpeta")
-        st.markdown("""<div class="card" style="border-color:#1e40af;margin-bottom:16px;">
-            <p style="color:#93c5fd;margin:0;font-size:0.8rem;">
-                ℹ️ Al eliminar, la carpeta se mueve a la <strong>papelera de Drive</strong> (se puede restaurar
-                desde ahí si fue un error). No se borra de forma permanente al instante.
-            </p>
-        </div>""", unsafe_allow_html=True)
-
-        nivel = st.selectbox(
-            "¿Qué querés modificar?",
-            ["Empresa", "Obra", "Tipo", "Subtipo"],
-            key="nivel_modificar"
-        )
-
-        ruta_objetivo = None
-        nombre_actual = None
-
-        if nivel == "Empresa":
-            empresa_m = st.selectbox("Empresa", empresas, key="m_empresa")
-            ruta_objetivo = (empresa_m,)
-            nombre_actual = empresa_m
-
-        elif nivel == "Obra":
-            empresa_m = st.selectbox("Empresa", empresas, key="m_obra_empresa")
-            obras_m = obtener_obras(empresa_m)
-            if obras_m:
-                obra_m = st.selectbox("Obra", obras_m, key="m_obra")
-                ruta_objetivo = (empresa_m, obra_m)
-                nombre_actual = obra_m
-            else:
-                st.info("Esta empresa no tiene obras.")
-
-        elif nivel == "Tipo":
-            empresa_m = st.selectbox("Empresa", empresas, key="m_tipo_empresa")
-            obras_m = obtener_obras(empresa_m)
-            origen_m = st.selectbox(
-                "¿Dónde está el tipo?",
-                [f"📚 Base documental ({CARPETA_BASES})"] + [f"🏗️ Obra: {o}" for o in obras_m],
-                key="m_tipo_origen"
-            )
-            ruta_padre_m = (empresa_m, CARPETA_BASES) if origen_m.startswith("📚") \
-                else (empresa_m, origen_m.replace("🏗️ Obra: ", ""))
-            tipos_m = obtener_tipos(*ruta_padre_m)
-            if tipos_m:
-                tipo_m = st.selectbox("Tipo", tipos_m, key="m_tipo")
-                ruta_objetivo = ruta_padre_m + (tipo_m,)
-                nombre_actual = tipo_m
-            else:
-                st.info("Esa carpeta no tiene tipos cargados.")
-
-        elif nivel == "Subtipo":
-            empresa_m = st.selectbox("Empresa", empresas, key="m_sub_empresa")
-            obras_m = obtener_obras(empresa_m)
-            origen_m = st.selectbox(
-                "¿Dónde está el tipo?",
-                [f"📚 Base documental ({CARPETA_BASES})"] + [f"🏗️ Obra: {o}" for o in obras_m],
-                key="m_sub_origen"
-            )
-            ruta_padre_m = (empresa_m, CARPETA_BASES) if origen_m.startswith("📚") \
-                else (empresa_m, origen_m.replace("🏗️ Obra: ", ""))
-            tipos_m = obtener_tipos(*ruta_padre_m)
-            if tipos_m:
-                tipo_m = st.selectbox("Tipo", tipos_m, key="m_sub_tipo")
-                subtipos_m = obtener_tipos(*ruta_padre_m, tipo_m)
-                if subtipos_m:
-                    subtipo_m = st.selectbox("Subtipo", subtipos_m, key="m_subtipo")
-                    ruta_objetivo = ruta_padre_m + (tipo_m, subtipo_m)
-                    nombre_actual = subtipo_m
-                else:
-                    st.info("Ese tipo no tiene subtipos cargados.")
-            else:
-                st.info("Esa carpeta no tiene tipos cargados.")
-
-        if ruta_objetivo:
-            st.markdown(f"""<div class="card" style="padding:10px 14px;margin:12px 0;">
-                <div style="color:#93c5fd;font-size:0.8rem;font-family:monospace;">📁 {" / ".join(ruta_objetivo)}</div>
+        if not empresas:
+            st.info("Todavía no hay ninguna empresa creada.")
+        else:
+            st.markdown("""<div class="card" style="border-color:#1e40af;margin-bottom:16px;">
+                <p style="color:#93c5fd;margin:0;font-size:0.8rem;">
+                    ℹ️ Al eliminar, la carpeta se mueve a la <strong>papelera de Drive</strong> (se puede restaurar
+                    desde ahí si fue un error). No se borra de forma permanente al instante.
+                </p>
             </div>""", unsafe_allow_html=True)
 
-            col_ren, col_del = st.columns(2)
+            nivel = st.selectbox(
+                "¿Qué querés modificar?",
+                ["Empresa", "Obra", "Tipo", "Subtipo"],
+                key="nivel_modificar"
+            )
 
-            with col_ren:
-                st.markdown("**Renombrar**")
-                nuevo_nombre = st.text_input("Nuevo nombre", value=nombre_actual, key="m_nuevo_nombre")
-                if st.button("✏️ Renombrar", key="m_btn_renombrar", use_container_width=True):
-                    nuevo_slug = limpiar_nombre(nuevo_nombre)
-                    if not nuevo_slug or nuevo_slug == nombre_actual:
-                        st.warning("Ingresá un nombre distinto al actual.")
+            ruta_objetivo = None
+            nombre_actual = None
+
+            if nivel == "Empresa":
+                empresa_m = st.selectbox("Empresa", empresas, key="m_empresa")
+                ruta_objetivo = (empresa_m,)
+                nombre_actual = empresa_m
+
+            elif nivel == "Obra":
+                empresa_m = st.selectbox("Empresa", empresas, key="m_obra_empresa")
+                obras_m = obtener_obras(empresa_m)
+                if obras_m:
+                    obra_m = st.selectbox("Obra", obras_m, key="m_obra")
+                    ruta_objetivo = (empresa_m, obra_m)
+                    nombre_actual = obra_m
+                else:
+                    st.info("Esta empresa no tiene obras.")
+
+            elif nivel == "Tipo":
+                empresa_m = st.selectbox("Empresa", empresas, key="m_tipo_empresa")
+                obras_m = obtener_obras(empresa_m)
+                origen_m = st.selectbox(
+                    "¿Dónde está el tipo?",
+                    [f"📚 Base documental ({CARPETA_BASES})"] + [f"🏗️ Obra: {o}" for o in obras_m],
+                    key="m_tipo_origen"
+                )
+                ruta_padre_m = (empresa_m, CARPETA_BASES) if origen_m.startswith("📚") \
+                    else (empresa_m, origen_m.replace("🏗️ Obra: ", ""))
+                tipos_m = obtener_tipos(*ruta_padre_m)
+                if tipos_m:
+                    tipo_m = st.selectbox("Tipo", tipos_m, key="m_tipo")
+                    ruta_objetivo = ruta_padre_m + (tipo_m,)
+                    nombre_actual = tipo_m
+                else:
+                    st.info("Esa carpeta no tiene tipos cargados.")
+
+            elif nivel == "Subtipo":
+                empresa_m = st.selectbox("Empresa", empresas, key="m_sub_empresa")
+                obras_m = obtener_obras(empresa_m)
+                origen_m = st.selectbox(
+                    "¿Dónde está el tipo?",
+                    [f"📚 Base documental ({CARPETA_BASES})"] + [f"🏗️ Obra: {o}" for o in obras_m],
+                    key="m_sub_origen"
+                )
+                ruta_padre_m = (empresa_m, CARPETA_BASES) if origen_m.startswith("📚") \
+                    else (empresa_m, origen_m.replace("🏗️ Obra: ", ""))
+                tipos_m = obtener_tipos(*ruta_padre_m)
+                if tipos_m:
+                    tipo_m = st.selectbox("Tipo", tipos_m, key="m_sub_tipo")
+                    subtipos_m = obtener_tipos(*ruta_padre_m, tipo_m)
+                    if subtipos_m:
+                        subtipo_m = st.selectbox("Subtipo", subtipos_m, key="m_subtipo")
+                        ruta_objetivo = ruta_padre_m + (tipo_m, subtipo_m)
+                        nombre_actual = subtipo_m
                     else:
-                        with st.spinner("Renombrando..."):
-                            ok, msg = renombrar_carpeta(ruta_objetivo, nuevo_slug)
+                        st.info("Ese tipo no tiene subtipos cargados.")
+                else:
+                    st.info("Esa carpeta no tiene tipos cargados.")
+
+            if ruta_objetivo:
+                st.markdown(f"""<div class="card" style="padding:10px 14px;margin:12px 0;">
+                    <div style="color:#93c5fd;font-size:0.8rem;font-family:monospace;">📁 {" / ".join(ruta_objetivo)}</div>
+                </div>""", unsafe_allow_html=True)
+
+                col_ren, col_del = st.columns(2)
+
+                with col_ren:
+                    st.markdown("**Renombrar**")
+                    nuevo_nombre = st.text_input("Nuevo nombre", value=nombre_actual, key="m_nuevo_nombre")
+                    if st.button("✏️ Renombrar", key="m_btn_renombrar", use_container_width=True):
+                        nuevo_slug = limpiar_nombre(nuevo_nombre)
+                        if not nuevo_slug or nuevo_slug == nombre_actual:
+                            st.warning("Ingresá un nombre distinto al actual.")
+                        else:
+                            with st.spinner("Renombrando..."):
+                                ok, msg = renombrar_carpeta(ruta_objetivo, nuevo_slug)
+                            if ok:
+                                st.success(f"✅ {msg}")
+                                st.cache_data.clear()
+                            else:
+                                st.error(f"❌ {msg}")
+
+                with col_del:
+                    st.markdown("**Eliminar**")
+                    confirmar = st.checkbox(f"Confirmo que quiero eliminar '{nombre_actual}' y todo su contenido",
+                                             key="m_confirmar_borrado")
+                    if st.button("🗑️ Eliminar carpeta", key="m_btn_eliminar", use_container_width=True,
+                                 disabled=not confirmar):
+                        with st.spinner("Eliminando..."):
+                            ok, msg = eliminar_carpeta(ruta_objetivo)
                         if ok:
                             st.success(f"✅ {msg}")
                             st.cache_data.clear()
                         else:
                             st.error(f"❌ {msg}")
-
-            with col_del:
-                st.markdown("**Eliminar**")
-                confirmar = st.checkbox(f"Confirmo que quiero eliminar '{nombre_actual}' y todo su contenido",
-                                         key="m_confirmar_borrado")
-                if st.button("🗑️ Eliminar carpeta", key="m_btn_eliminar", use_container_width=True,
-                             disabled=not confirmar):
-                    with st.spinner("Eliminando..."):
-                        ok, msg = eliminar_carpeta(ruta_objetivo)
-                    if ok:
-                        st.success(f"✅ {msg}")
-                        st.cache_data.clear()
-                    else:
-                        st.error(f"❌ {msg}")
 
     st.markdown("<hr style='border-color:#334155; margin:24px 0 16px 0;'>", unsafe_allow_html=True)
     st.markdown("#### 📲 Probar WhatsApp")
