@@ -160,6 +160,10 @@ GH_TOKEN = st.secrets["GITHUB_TOKEN"]
 GH_REPO  = st.secrets["GITHUB_REPO"]
 GH_HEADERS = {"Authorization": f"token {GH_TOKEN}"}
 
+# CallMeBot (WhatsApp) — opcional. Si no está configurado, la app funciona igual.
+CALLMEBOT_PHONE  = st.secrets.get("CALLMEBOT_PHONE", "")
+CALLMEBOT_APIKEY = st.secrets.get("CALLMEBOT_APIKEY", "")
+
 @st.cache_data(ttl=300)
 def github_api(ruta):
     url = f"https://api.github.com/repos/{GH_REPO}/contents/{ruta}"
@@ -313,6 +317,66 @@ def subir_a_github(ruta_completa, nombre, contenido):
     )
     return r.status_code in [200, 201]
 
+def crear_carpeta_github(ruta_completa):
+    """
+    GitHub no tiene 'carpetas vacías': se crean subiendo un archivo
+    placeholder (.gitkeep) adentro de la ruta deseada.
+    """
+    return subir_a_github(ruta_completa, ".gitkeep", b"")
+
+def limpiar_nombre(nombre):
+    """Normaliza un nombre para usarlo como carpeta (sin espacios ni tildes)."""
+    reemplazos = {
+        "á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u", "ñ": "n",
+        "Á": "a", "É": "e", "Í": "i", "Ó": "o", "Ú": "u", "Ñ": "n",
+    }
+    n = nombre.strip().lower()
+    for a, b in reemplazos.items():
+        n = n.replace(a, b)
+    n = n.replace(" ", "_")
+    return "".join(c for c in n if c.isalnum() or c == "_")
+
+# =========================
+# WHATSAPP (CallMeBot)
+# =========================
+def whatsapp_configurado():
+    return bool(CALLMEBOT_PHONE and CALLMEBOT_APIKEY)
+
+def enviar_whatsapp(mensaje):
+    """
+    Envía un mensaje de WhatsApp usando CallMeBot (gratis).
+    Requiere CALLMEBOT_PHONE y CALLMEBOT_APIKEY en secrets.
+    """
+    if not whatsapp_configurado():
+        return False, "Faltan configurar CALLMEBOT_PHONE y CALLMEBOT_APIKEY en secrets."
+    import urllib.parse
+    texto = urllib.parse.quote(mensaje)
+    url = (
+        f"https://api.callmebot.com/whatsapp.php"
+        f"?phone={CALLMEBOT_PHONE}&text={texto}&apikey={CALLMEBOT_APIKEY}"
+    )
+    try:
+        r = requests.get(url, timeout=15)
+        return (r.status_code == 200), r.text
+    except Exception as e:
+        return False, str(e)
+
+def armar_mensaje_alertas(empresa, obra, alertas):
+    if not alertas:
+        return f"✅ SST | {empresa} - {obra}: sin vencimientos pendientes."
+    vencidos = [a for a in alertas if a["estado"] == "vencido"]
+    proximos = [a for a in alertas if a["estado"] == "proximo"]
+    lineas = [f"🦺 SST | {empresa} - {obra}"]
+    if vencidos:
+        lineas.append(f"\n🚨 VENCIDOS ({len(vencidos)}):")
+        for a in vencidos:
+            lineas.append(f"- {a['archivo']} ({a['tipo']})")
+    if proximos:
+        lineas.append(f"\n⚠️ PRÓXIMOS A VENCER ({len(proximos)}):")
+        for a in proximos:
+            lineas.append(f"- {a['archivo']} ({a['tipo']})")
+    return "\n".join(lineas)
+
 # =========================
 # SIDEBAR
 # =========================
@@ -344,7 +408,7 @@ with st.sidebar:
 
     seccion = st.radio(
         "Navegación",
-        ["📊 Dashboard", "🔎 Consulta", "📤 Cargar documento"],
+        ["📊 Dashboard", "🔎 Consulta", "📤 Cargar documento", "⚙️ Gestionar carpetas"],
         key="seccion"
     )
 
@@ -390,6 +454,20 @@ if seccion == "📊 Dashboard":
     proximos  = sum(1 for a in alertas if a["estado"] == "proximo")
     completos = sum(1 for r in resumen if r["estado"] == "completo")
     criticos  = sum(1 for r in resumen if r["estado"] == "critico")
+
+    col_titulo, col_wp = st.columns([4, 1])
+    with col_wp:
+        if st.button("📲 Enviar por WhatsApp", use_container_width=True):
+            if not whatsapp_configurado():
+                st.warning("⚠️ Configurá CALLMEBOT_PHONE y CALLMEBOT_APIKEY en secrets para usar esta función.")
+            else:
+                with st.spinner("Enviando..."):
+                    msg = armar_mensaje_alertas(empresa, obra, alertas)
+                    ok, resp = enviar_whatsapp(msg)
+                if ok:
+                    st.success("✅ Mensaje enviado por WhatsApp")
+                else:
+                    st.error(f"❌ No se pudo enviar: {resp}")
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
@@ -580,11 +658,157 @@ elif seccion == "📤 Cargar documento":
             </div>
         </div>""", unsafe_allow_html=True)
 
+        notificar_wp = st.checkbox(
+            "📲 Notificarme por WhatsApp cuando se suba este documento",
+            value=False,
+            disabled=not whatsapp_configurado(),
+            help=None if whatsapp_configurado() else "Configurá CALLMEBOT_PHONE y CALLMEBOT_APIKEY en secrets"
+        )
+
         if st.button("⬆️ Subir documento", use_container_width=True):
             with st.spinner("Subiendo..."):
                 ok = subir_a_github(ruta, archivo.name, archivo.getbuffer())
             if ok:
                 st.success("✅ Documento subido correctamente")
+                if notificar_wp:
+                    msg = (
+                        f"📤 SST | Nuevo documento cargado\n"
+                        f"Empresa: {empresa}\nObra: {obra}\n"
+                        f"Tipo: {tipo_carga}"
+                        + (f" / {subtipo_sel}" if subtipo_sel != "— sin subtipo —" else "")
+                        + f"\nArchivo: {archivo.name}"
+                    )
+                    wp_ok, wp_resp = enviar_whatsapp(msg)
+                    if wp_ok:
+                        st.success("✅ Notificación de WhatsApp enviada")
+                    else:
+                        st.warning(f"⚠️ Documento subido, pero falló el WhatsApp: {wp_resp}")
                 st.cache_data.clear()
             else:
                 st.error("❌ Error al subir. Verificá el token y los permisos del repositorio.")
+
+# =========================
+# GESTIONAR CARPETAS
+# =========================
+elif seccion == "⚙️ Gestionar carpetas":
+    st.markdown("### ⚙️ Gestión de carpetas")
+    st.markdown("""<div class="card" style="margin-bottom:20px;border-color:#1e40af;">
+        <p style="color:#93c5fd;margin:0;font-size:0.85rem;">
+            📌 Acá podés crear nuevas empresas, obras, tipos y subtipos sin entrar a GitHub.
+            Los nombres se normalizan automáticamente (sin espacios ni tildes).
+        </p>
+    </div>""", unsafe_allow_html=True)
+
+    tab1, tab2, tab3, tab4 = st.tabs(["🏢 Empresa", "🏗️ Obra", "📁 Tipo", "📂 Subtipo"])
+
+    # --- Nueva empresa ---
+    with tab1:
+        st.markdown("#### Crear nueva empresa")
+        nombre_empresa = st.text_input("Nombre de la empresa", key="in_empresa")
+        if st.button("➕ Crear empresa", key="btn_empresa"):
+            if not nombre_empresa:
+                st.warning("Ingresá un nombre.")
+            else:
+                slug = limpiar_nombre(nombre_empresa)
+                with st.spinner("Creando..."):
+                    ok = crear_carpeta_github(f"ventana/{slug}/{CARPETA_BASES}")
+                if ok:
+                    st.success(f"✅ Empresa '{slug}' creada")
+                    st.cache_data.clear()
+                else:
+                    st.error("❌ No se pudo crear (¿ya existe?)")
+
+    # --- Nueva obra ---
+    with tab2:
+        st.markdown("#### Crear nueva obra")
+        st.caption(f"Se creará dentro de la empresa: **{empresa}**")
+        nombre_obra = st.text_input("Nombre de la obra", key="in_obra")
+        if st.button("➕ Crear obra", key="btn_obra"):
+            if not nombre_obra:
+                st.warning("Ingresá un nombre.")
+            else:
+                slug = limpiar_nombre(nombre_obra)
+                with st.spinner("Creando..."):
+                    ok = crear_carpeta_github(f"ventana/{empresa}/{slug}")
+                if ok:
+                    st.success(f"✅ Obra '{slug}' creada en {empresa}")
+                    st.cache_data.clear()
+                else:
+                    st.error("❌ No se pudo crear (¿ya existe?)")
+
+    # --- Nuevo tipo ---
+    with tab3:
+        st.markdown("#### Crear nuevo tipo de registro")
+        destino_tipo = st.selectbox(
+            "¿Dónde va este tipo?",
+            [f"📚 Base documental ({CARPETA_BASES})"] + [f"🏗️ Obra: {o}" for o in obras],
+            key="destino_tipo"
+        )
+        nombre_tipo = st.text_input("Nombre del tipo (ej: altura, excavacion)", key="in_tipo")
+        if st.button("➕ Crear tipo", key="btn_tipo"):
+            if not nombre_tipo:
+                st.warning("Ingresá un nombre.")
+            else:
+                slug = limpiar_nombre(nombre_tipo)
+                if destino_tipo.startswith("📚"):
+                    ruta_padre = f"ventana/{empresa}/{CARPETA_BASES}"
+                else:
+                    obra_destino = destino_tipo.replace("🏗️ Obra: ", "")
+                    ruta_padre = f"ventana/{empresa}/{obra_destino}"
+                with st.spinner("Creando..."):
+                    ok = crear_carpeta_github(f"{ruta_padre}/{slug}")
+                if ok:
+                    st.success(f"✅ Tipo '{slug}' creado en {ruta_padre}")
+                    st.cache_data.clear()
+                else:
+                    st.error("❌ No se pudo crear (¿ya existe?)")
+        st.caption("💡 Tip: si el tipo es de un permiso de trabajo (altura, excavación, caliente, izaje, espacio confinado), "
+                   "creálo también dentro de la base documental y dentro de cada obra que lo necesite.")
+
+    # --- Nuevo subtipo ---
+    with tab4:
+        st.markdown("#### Crear nuevo subtipo")
+        st.caption("Un subtipo es una subcarpeta dentro de un tipo (ej: dentro de 'altura' → 'permiso', 'ats').")
+        origen_subtipo = st.selectbox(
+            "¿Dentro de qué carpeta va?",
+            [f"📚 Base documental ({CARPETA_BASES})"] + [f"🏗️ Obra: {o}" for o in obras],
+            key="origen_subtipo"
+        )
+        if origen_subtipo.startswith("📚"):
+            ruta_base_subtipo = f"ventana/{empresa}/{CARPETA_BASES}"
+        else:
+            obra_sel_subtipo = origen_subtipo.replace("🏗️ Obra: ", "")
+            ruta_base_subtipo = f"ventana/{empresa}/{obra_sel_subtipo}"
+
+        tipos_disponibles = obtener_tipos(ruta_base_subtipo)
+        if not tipos_disponibles:
+            st.warning("Esa carpeta todavía no tiene tipos creados. Creá un tipo primero en la pestaña anterior.")
+        else:
+            tipo_padre = st.selectbox("Tipo", tipos_disponibles, key="in_tipo_padre_subtipo")
+            nombre_subtipo = st.text_input("Nombre del subtipo (ej: permiso, ats, checklist)", key="in_subtipo")
+            if st.button("➕ Crear subtipo", key="btn_subtipo"):
+                if not nombre_subtipo:
+                    st.warning("Ingresá un nombre.")
+                else:
+                    slug = limpiar_nombre(nombre_subtipo)
+                    with st.spinner("Creando..."):
+                        ok = crear_carpeta_github(f"{ruta_base_subtipo}/{tipo_padre}/{slug}")
+                    if ok:
+                        st.success(f"✅ Subtipo '{slug}' creado en {ruta_base_subtipo}/{tipo_padre}")
+                        st.cache_data.clear()
+                    else:
+                        st.error("❌ No se pudo crear (¿ya existe?)")
+
+    st.markdown("<hr style='border-color:#334155; margin:24px 0 16px 0;'>", unsafe_allow_html=True)
+    st.markdown("#### 📲 Probar WhatsApp")
+    if whatsapp_configurado():
+        if st.button("Enviar mensaje de prueba"):
+            with st.spinner("Enviando..."):
+                ok, resp = enviar_whatsapp("🦺 Prueba del Sistema SST: la conexión con WhatsApp funciona correctamente.")
+            if ok:
+                st.success("✅ Mensaje de prueba enviado")
+            else:
+                st.error(f"❌ {resp}")
+    else:
+        st.info("Para activar WhatsApp agregá `CALLMEBOT_PHONE` y `CALLMEBOT_APIKEY` en tus secrets de Streamlit. "
+                "Ver instrucciones abajo.")
